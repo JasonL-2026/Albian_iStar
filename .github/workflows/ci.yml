@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [DEV, TEST]
+  pull_request:
+    branches: [DEV, TEST, PROD]
+
+jobs:
+  syntax-check:
+    name: Python syntax check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Check syntax — build_dashboard.py
+        run: python -m py_compile build_dashboard.py
+
+      - name: Check syntax — all other Python files
+        run: |
+          for f in *.py; do
+            echo "Checking $f"
+            python -m py_compile "$f"
+          done
+
+  build-with-samples:
+    name: Build dashboard with sample data
+    runs-on: ubuntu-latest
+    needs: syntax-check
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build dashboard using sample data
+        # Point the builder at the sample CSVs so no live data is required.
+        # If no sample data exists yet, this step is skipped gracefully.
+        run: |
+          if [ -d "Data/samples" ]; then
+            DASH_DATADIR=Data/samples python build_dashboard.py
+            echo "Build succeeded. Checking output exists..."
+            test -f Haulage_Dashboard.html && echo "Haulage_Dashboard.html generated OK."
+          else
+            echo "No Data/samples directory found — skipping full build check."
+            echo "Add sample CSVs to Data/samples/ to enable end-to-end build validation."
+          fi
