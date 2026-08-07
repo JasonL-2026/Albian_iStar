@@ -1202,18 +1202,20 @@ for sid in byShift:
 # ============================ HTML ============================
 HTML = r'''<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Albian Mine - Haulage Dashboard</title>
+<title>Albian Mine - iSTAR Dashboard</title>
 <style>
 :root{--bg:#eef0f4;--card:#fff;--ink:#2b2f36;--muted:#7c828c;--line:#e3e6ec;
  --green:#4caf50;--red:#e23b32;--blue:#3f51b5;--purpleband:#3a3f9e;--head:#5c6470;}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.4 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
 .wrap{max-width:1180px;margin:0 auto;padding:14px}
-.topbar{display:flex;align-items:center;gap:14px;margin-bottom:12px;flex-wrap:wrap}
+.topbar{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+.title-wrap{text-align:center}
 .title{font-size:18px;font-weight:700}
 .sub{color:var(--muted);font-size:12px}
-.toggle{margin-left:10px;display:inline-flex;border:1px solid #cfd4dd;border-radius:8px;overflow:hidden}
-.shiftnav{margin-left:auto;display:inline-flex;align-items:center;gap:4px}
+.topcontrols{display:flex;justify-content:flex-end;align-items:center;gap:10px;flex-wrap:wrap}
+.toggle{margin-left:0;display:inline-flex;border:1px solid #cfd4dd;border-radius:8px;overflow:hidden}
+.shiftnav{margin-left:0;display:inline-flex;align-items:center;gap:4px}
 .shiftnav select{height:32px;border:1px solid #cfd4dd;border-radius:8px;padding:0 8px;font-size:13px;font-weight:600;color:#3a3f46;background:#fff;cursor:pointer}
 .shiftnav button{width:30px;height:32px;border:1px solid #cfd4dd;background:#fff;border-radius:8px;font-size:16px;line-height:1;color:#566;cursor:pointer}
 .shiftnav button:disabled{opacity:.4;cursor:default}
@@ -1374,15 +1376,19 @@ table.wf td.lead .ta{color:#2b2f36;font-weight:600}
 .content{flex:1;min-width:0}
 @media(max-width:820px){.charts{grid-template-columns:1fr}.avgrid{grid-template-columns:1fr}.layout{flex-direction:column}.sidenav{flex:auto;flex-direction:row;flex-wrap:wrap;position:static}}
 </style></head><body><div class="wrap">
-<div class="topbar">
-  <div><div class="title">Albian Mine — Haulage Dashboard</div>
-  <div class="sub" id="sub"></div></div>
-  <div class="shiftnav" id="shiftnav"></div>
-  <div class="toggle" id="toggle"></div>
-</div>
 <div class="layout">
   <nav class="sidenav" id="sidenav"></nav>
   <main class="content">
+    <div class="topbar">
+      <div class="title-wrap">
+        <div class="title">Albian Mine - iSTAR Dashboard</div>
+        <div class="sub" id="sub"></div>
+      </div>
+      <div class="topcontrols">
+        <div class="shiftnav" id="shiftnav"></div>
+        <div class="toggle" id="toggle"></div>
+      </div>
+    </div>
 
     <section class="page" id="pg-balance">
       <div class="cards" id="cards"></div>
