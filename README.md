@@ -151,4 +151,27 @@ After each TEST → PROD merge, a GitHub Release is created and the built `Haula
 4. Open a pull request targeting `TEST`
 5. Fill in the PR template — include which shifts were used to validate
 
+### Step-by-step: move tested changes from a new branch to `TEST`
+
+1. Confirm you are on your session/feature/fix branch:
+   - `git checkout session/my-change`
+2. Confirm everything is committed:
+   - `git status`
+   - If needed: `git add .` then `git commit -m "Describe tested change"`
+3. Push your branch:
+   - `git push -u origin session/my-change`
+4. Open a PR in GitHub:
+   - Base: `TEST`
+   - Compare: `session/my-change`
+5. Complete the PR template:
+   - Data used to test
+   - ShiftIds validated
+   - Key KPI outputs
+   - Dashboard render confirmation
+   - Linked issue (`Closes #...`)
+6. Wait for required checks (CI + data-integrity gates) to pass.
+7. Get required approval(s) for `TEST`.
+8. Merge the PR into `TEST`.
+9. Optionally delete the source branch after merge.
+
 See [Dashboard_Methodology.md](Dashboard_Methodology.md) for the full calculation specification.
