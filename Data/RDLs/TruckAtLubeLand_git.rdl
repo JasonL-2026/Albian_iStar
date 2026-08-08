@@ -12,7 +12,10 @@
     <DataSet Name="dsTruckAtLubeLand">
       <Query>
         <DataSourceName>SICDataSource</DataSourceName>
-        <CommandText>SELECT * FROM [ASEOperational].[CommonASE].[TruckFuelLevelatLubeland]</CommandText>
+        <CommandText>SELECT *
+FROM [ASEOperational].[CommonASE].[TruckFuelLevelatLubeland]
+WHERE TRY_CONVERT(datetime, [TimeStamp]) &gt;= DATEFROMPARTS(YEAR(DATEADD(MONTH, -1, GETDATE())), MONTH(DATEADD(MONTH, -1, GETDATE())), 1)
+  AND TRY_CONVERT(datetime, [TimeStamp]) &lt; DATEADD(MONTH, 1, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1))</CommandText>
         <Timeout>0</Timeout>
       </Query>
       <Fields>

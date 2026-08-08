@@ -12,7 +12,10 @@
     <DataSet Name="dsAllLoadsDumps">
       <Query>
         <DataSourceName>SICDataSource</DataSourceName>
-        <CommandText>SELECT * FROM [ASEOperational].[dispowner].[SIC_AllLoadsDumps]</CommandText>
+        <CommandText>SELECT *
+FROM [ASEOperational].[dispowner].[SIC_AllLoadsDumps]
+WHERE TRY_CONVERT(datetime, [ShiftStartTimestamp]) &gt;= DATEFROMPARTS(YEAR(DATEADD(MONTH, -1, GETDATE())), MONTH(DATEADD(MONTH, -1, GETDATE())), 1)
+  AND TRY_CONVERT(datetime, [ShiftStartTimestamp]) &lt; DATEADD(MONTH, 1, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1))</CommandText>
         <Timeout>0</Timeout>
       </Query>
       <Fields>
