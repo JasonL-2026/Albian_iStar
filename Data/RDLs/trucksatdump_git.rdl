@@ -110,8 +110,6 @@ SELECT
     [QStatus]
 FROM [CommonASE].[TrucksAtDump]
 WHERE ShiftId BETWEEN @StartShift AND @EndShift
-  AND TRY_CONVERT(datetime, [LogTime]) &gt;= DATEFROMPARTS(YEAR(DATEADD(MONTH, -1, GETDATE())), MONTH(DATEADD(MONTH, -1, GETDATE())), 1)
-  AND TRY_CONVERT(datetime, [LogTime]) &lt; DATEADD(MONTH, 1, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1))
 ORDER BY ShiftId, DumpLocation, LogTime;
         </CommandText>
         <QueryParameters>

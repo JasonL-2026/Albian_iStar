@@ -83,9 +83,7 @@ WHERE CAST(
          THEN '001'
          ELSE '002'
     END
-AS INT) BETWEEN @StartShift AND @EndShift
-  AND TRY_CONVERT(datetime, [Timestamp]) &gt;= DATEFROMPARTS(YEAR(DATEADD(MONTH, -1, GETDATE())), MONTH(DATEADD(MONTH, -1, GETDATE())), 1)
-  AND TRY_CONVERT(datetime, [Timestamp]) &lt; DATEADD(MONTH, 1, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1))</CommandText>
+AS INT) BETWEEN @StartShift AND @EndShift</CommandText>
         <QueryParameters>
           <QueryParameter Name="@StartShift">
             <Value>=Parameters!StartShift.Value</Value>
