@@ -75,7 +75,7 @@ SELECT 'Last Week' AS PresetLabel,
         <DataSourceName>SICDataSource</DataSourceName>
         <CommandText>SELECT *
 FROM [ASEOperational].[dispowner].[SIC_ShiftEQMTStatusEvents]
-WHERE TRY_CONVERT(int, [ShiftId]) BETWEEN @StartShift AND @EndShift</CommandText>
+WHERE TRY_CONVERT(bigint, [ShiftId]) % 1000000000 BETWEEN @StartShift AND @EndShift</CommandText>
         <QueryParameters>
           <QueryParameter Name="@StartShift">
             <Value>=Parameters!StartShift.Value</Value>
