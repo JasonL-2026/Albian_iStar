@@ -5,7 +5,7 @@
     <DataSource Name="SICDataSource">
       <DataSourceReference>/PROD/Albian D6 Dispatch/Auxiliary/Data Sources/DispatchDataSource</DataSourceReference>
       <rd:SecurityType>None</rd:SecurityType>
-      <rd:DataSourceID>TruckatShovel-SICDataSource</rd:DataSourceID>
+      <rd:DataSourceID>0b9b4c81-5884-42bb-8608-acf60e41e0cb</rd:DataSourceID>
     </DataSource>
   </DataSources>
   <DataSets>
@@ -628,5 +628,5 @@ WHERE TRY_CONVERT(datetime, [LogTime]) &gt;= DATEFROMPARTS(YEAR(DATEADD(MONTH, -
     <Style />
   </Page>
   <Language>en-US</Language>
-  <rd:ReportID>TruckatShovel-SIC-Export</rd:ReportID>
+  <rd:ReportID>1a3a895e-39db-4909-8f94-c3ff95ad8944</rd:ReportID>
 </Report>

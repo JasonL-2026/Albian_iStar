@@ -31,7 +31,7 @@
         <DataProvider>SQL</DataProvider>
         <ConnectString>Data Source=#{SIC_DB_SERVER};Initial Catalog=ASEOperational;Integrated Security=SSPI</ConnectString>
       </ConnectionProperties>
-      <rd:DataSourceID>sic-datasource-git</rd:DataSourceID>
+      <rd:DataSourceID>f0cef343-e43f-44a2-bb7d-2488a3c0bef9</rd:DataSourceID>
     </DataSource>
   </DataSources>
 
@@ -257,6 +257,6 @@ ORDER BY ShiftId, DumpLocation, LogTime;
   </ReportSections>
 
   <rd:ReportUnitType>Inch</rd:ReportUnitType>
-  <rd:ReportID>trucksatdump-git-albian-sic</rd:ReportID>
+  <rd:ReportID>a45559eb-9ed4-4df4-9f52-d78bcf9a8d01</rd:ReportID>
 
 </Report>
