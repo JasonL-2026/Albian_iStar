@@ -9,13 +9,76 @@
     </DataSource>
   </DataSources>
   <DataSets>
+    <DataSet Name="CurrentShift">
+      <Query>
+        <DataSourceName>SICDataSource</DataSourceName>
+        <CommandText>SELECT CAST(
+    FORMAT(
+        CASE WHEN DATEPART(HOUR, GETDATE()) &lt; 6
+             THEN DATEADD(DAY, -1, GETDATE())
+             ELSE GETDATE()
+        END,
+        'yyMMdd'
+    ) +
+    CASE WHEN DATEPART(HOUR, GETDATE()) &gt;= 6
+              AND DATEPART(HOUR, GETDATE()) &lt; 18
+         THEN '001'
+         ELSE '002'
+    END
+AS INT) AS CurrentShiftId;</CommandText>
+        <Timeout>0</Timeout>
+      </Query>
+      <Fields>
+        <Field Name="CurrentShiftId">
+          <DataField>CurrentShiftId</DataField>
+          <rd:TypeName>System.Int32</rd:TypeName>
+        </Field>
+      </Fields>
+    </DataSet>
+    <DataSet Name="ShiftList">
+      <Query>
+        <DataSourceName>SICDataSource</DataSourceName>
+        <CommandText>SELECT DISTINCT
+    TRY_CONVERT(int, [ShiftId]) AS ShiftId,
+    CONVERT(varchar(10), TRY_CONVERT(date, LEFT(RIGHT('000000000' + CAST(TRY_CONVERT(int, [ShiftId]) AS varchar(9)), 9), 6), 12), 23) +
+    CASE WHEN RIGHT('000000000' + CAST(TRY_CONVERT(int, [ShiftId]) AS varchar(9)), 3) = '001'
+         THEN ' Day Shift'
+         ELSE ' Night Shift'
+    END AS ShiftLabel
+FROM [ASEOperational].[dispowner].[SIC_AllLoadsDumps]
+WHERE TRY_CONVERT(int, [ShiftId]) IS NOT NULL
+  AND TRY_CONVERT(datetime, [ShiftStartTimestamp]) &gt;= DATEFROMPARTS(YEAR(DATEADD(MONTH, -1, GETDATE())), MONTH(DATEADD(MONTH, -1, GETDATE())), 1)
+  AND TRY_CONVERT(datetime, [ShiftStartTimestamp]) &lt; DATEADD(MONTH, 1, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1))
+ORDER BY ShiftId DESC;</CommandText>
+        <Timeout>0</Timeout>
+      </Query>
+      <Fields>
+        <Field Name="ShiftId">
+          <DataField>ShiftId</DataField>
+          <rd:TypeName>System.Int32</rd:TypeName>
+        </Field>
+        <Field Name="ShiftLabel">
+          <DataField>ShiftLabel</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+      </Fields>
+    </DataSet>
     <DataSet Name="dsAllLoadsDumps">
       <Query>
         <DataSourceName>SICDataSource</DataSourceName>
         <CommandText>SELECT *
 FROM [ASEOperational].[dispowner].[SIC_AllLoadsDumps]
-WHERE TRY_CONVERT(datetime, [ShiftStartTimestamp]) &gt;= DATEFROMPARTS(YEAR(DATEADD(MONTH, -1, GETDATE())), MONTH(DATEADD(MONTH, -1, GETDATE())), 1)
+WHERE TRY_CONVERT(int, [ShiftId]) BETWEEN @StartShift AND @EndShift
+  AND TRY_CONVERT(datetime, [ShiftStartTimestamp]) &gt;= DATEFROMPARTS(YEAR(DATEADD(MONTH, -1, GETDATE())), MONTH(DATEADD(MONTH, -1, GETDATE())), 1)
   AND TRY_CONVERT(datetime, [ShiftStartTimestamp]) &lt; DATEADD(MONTH, 1, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1))</CommandText>
+        <QueryParameters>
+          <QueryParameter Name="@StartShift">
+            <Value>=Parameters!StartShift.Value</Value>
+          </QueryParameter>
+          <QueryParameter Name="@EndShift">
+            <Value>=Parameters!EndShift.Value</Value>
+          </QueryParameter>
+        </QueryParameters>
         <Timeout>0</Timeout>
       </Query>
       <Fields>
@@ -234,6 +297,42 @@ WHERE TRY_CONVERT(datetime, [ShiftStartTimestamp]) &gt;= DATEFROMPARTS(YEAR(DATE
       </Fields>
     </DataSet>
   </DataSets>
+  <ReportParameters>
+    <ReportParameter Name="StartShift">
+      <DataType>Integer</DataType>
+      <Prompt>Start Shift</Prompt>
+      <DefaultValue>
+        <DataSetReference>
+          <DataSetName>CurrentShift</DataSetName>
+          <ValueField>CurrentShiftId</ValueField>
+        </DataSetReference>
+      </DefaultValue>
+      <AvailableValues>
+        <DataSetReference>
+          <DataSetName>ShiftList</DataSetName>
+          <ValueField>ShiftId</ValueField>
+          <LabelField>ShiftLabel</LabelField>
+        </DataSetReference>
+      </AvailableValues>
+    </ReportParameter>
+    <ReportParameter Name="EndShift">
+      <DataType>Integer</DataType>
+      <Prompt>End Shift</Prompt>
+      <DefaultValue>
+        <DataSetReference>
+          <DataSetName>CurrentShift</DataSetName>
+          <ValueField>CurrentShiftId</ValueField>
+        </DataSetReference>
+      </DefaultValue>
+      <AvailableValues>
+        <DataSetReference>
+          <DataSetName>ShiftList</DataSetName>
+          <ValueField>ShiftId</ValueField>
+          <LabelField>ShiftLabel</LabelField>
+        </DataSetReference>
+      </AvailableValues>
+    </ReportParameter>
+  </ReportParameters>
   <Body>
     <ReportItems>
       <Tablix Name="tblAllLoadsDumps">
