@@ -72,7 +72,11 @@ AS INT) AS CurrentShiftId;
       <Query>
         <DataSourceName>SIC_DS</DataSourceName>
         <CommandText>
-SELECT 'Current'      AS PresetLabel,
+SELECT 'Current Month' AS PresetLabel,
+       CAST(FORMAT(DATEFROMPARTS(YEAR(GETDATE()),MONTH(GETDATE()),1),'yyMMdd')+'001' AS INT) AS StartShiftId,
+       CAST(FORMAT(EOMONTH(GETDATE()),'yyMMdd')+'002' AS INT) AS EndShiftId
+UNION ALL
+SELECT 'Previous Month' AS PresetLabel,
        CAST(FORMAT(DATEFROMPARTS(YEAR(DATEADD(MONTH,-1,GETDATE())),MONTH(DATEADD(MONTH,-1,GETDATE())),1),'yyMMdd')+'001' AS INT) AS StartShiftId,
        CAST(FORMAT(EOMONTH(DATEADD(MONTH,-1,GETDATE())),'yyMMdd')+'002' AS INT) AS EndShiftId
 UNION ALL

@@ -38,7 +38,11 @@ AS INT) AS CurrentShiftId;</CommandText>
     <DataSet Name="PeriodPresets">
       <Query>
         <DataSourceName>SICDataSource</DataSourceName>
-        <CommandText>SELECT 'Current'      AS PresetLabel,
+        <CommandText>SELECT 'Current Month' AS PresetLabel,
+       CAST(FORMAT(DATEFROMPARTS(YEAR(GETDATE()),MONTH(GETDATE()),1),'yyMMdd')+'001' AS INT) AS StartShiftId,
+       CAST(FORMAT(EOMONTH(GETDATE()),'yyMMdd')+'002' AS INT) AS EndShiftId
+UNION ALL
+SELECT 'Previous Month' AS PresetLabel,
        CAST(FORMAT(DATEFROMPARTS(YEAR(DATEADD(MONTH,-1,GETDATE())),MONTH(DATEADD(MONTH,-1,GETDATE())),1),'yyMMdd')+'001' AS INT) AS StartShiftId,
        CAST(FORMAT(EOMONTH(DATEADD(MONTH,-1,GETDATE())),'yyMMdd')+'002' AS INT) AS EndShiftId
 UNION ALL
@@ -156,9 +160,6 @@ WHERE TRY_CONVERT(int, [shiftId]) BETWEEN @StartShift AND @EndShift
           <DataSetName>PeriodPresets</DataSetName>
           <ValueField>EndShiftId</ValueField>
           <LabelField>PresetLabel</LabelField>
-        </DataSetReference>
-      </ValidValues>
-    </ReportParameter>
         </DataSetReference>
       </ValidValues>
     </ReportParameter>
