@@ -1,0 +1,18 @@
+{
+  "shift_id": "260807001",
+  "view": "Combined",
+  "metrics": {
+    "haulage.score": {
+      "expected": 95.30523488484198,
+      "tolerance": 1.0
+    },
+    "loading.score": {
+      "expected": 86.94919654182051,
+      "tolerance": 1.0
+    },
+    "truckBalance.pct": {
+      "expected": 0.0,
+      "tolerance": 0.01
+    }
+  }
+}
