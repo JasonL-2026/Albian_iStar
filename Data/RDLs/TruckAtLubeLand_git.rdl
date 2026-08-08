@@ -35,31 +35,30 @@ AS INT) AS CurrentShiftId;</CommandText>
         </Field>
       </Fields>
     </DataSet>
-    <DataSet Name="ShiftList">
+    <DataSet Name="PeriodPresets">
       <Query>
         <DataSourceName>SICDataSource</DataSourceName>
-        <CommandText>SELECT DISTINCT
-    TRY_CONVERT(int, [ShiftID]) AS ShiftId,
-    CONVERT(varchar(10), TRY_CONVERT(date, LEFT(RIGHT('000000000' + CAST(TRY_CONVERT(int, [ShiftID]) AS varchar(9)), 9), 6), 12), 23) +
-    CASE WHEN RIGHT('000000000' + CAST(TRY_CONVERT(int, [ShiftID]) AS varchar(9)), 3) = '001'
-         THEN ' Day Shift'
-         ELSE ' Night Shift'
-    END AS ShiftLabel
-FROM [ASEOperational].[CommonASE].[TruckFuelLevelatLubeland]
-WHERE TRY_CONVERT(int, [ShiftID]) IS NOT NULL
-  AND TRY_CONVERT(datetime, [TimeStamp]) &gt;= DATEFROMPARTS(YEAR(DATEADD(MONTH, -1, GETDATE())), MONTH(DATEADD(MONTH, -1, GETDATE())), 1)
-  AND TRY_CONVERT(datetime, [TimeStamp]) &lt; DATEADD(MONTH, 1, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1))
-ORDER BY ShiftId DESC;</CommandText>
+        <CommandText>SELECT 'Current'      AS PresetLabel,
+       CAST(FORMAT(DATEFROMPARTS(YEAR(DATEADD(MONTH,-1,GETDATE())),MONTH(DATEADD(MONTH,-1,GETDATE())),1),'yyMMdd')+'001' AS INT) AS StartShiftId,
+       CAST(FORMAT(EOMONTH(DATEADD(MONTH,-1,GETDATE())),'yyMMdd')+'002' AS INT) AS EndShiftId
+UNION ALL
+SELECT 'Current Week' AS PresetLabel,
+       CAST(FORMAT(DATEADD(DAY,-(DATEPART(WEEKDAY,GETDATE())+5)%7,CAST(GETDATE() AS DATE)),'yyMMdd')+'001' AS INT) AS StartShiftId,
+       CAST(FORMAT(CAST(GETDATE() AS DATE),'yyMMdd')+CASE WHEN DATEPART(HOUR,GETDATE())&gt;=6 AND DATEPART(HOUR,GETDATE())&lt;18 THEN '001' ELSE '002' END AS INT) AS EndShiftId</CommandText>
         <Timeout>0</Timeout>
       </Query>
       <Fields>
-        <Field Name="ShiftId">
-          <DataField>ShiftId</DataField>
+        <Field Name="PresetLabel">
+          <DataField>PresetLabel</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="StartShiftId">
+          <DataField>StartShiftId</DataField>
           <rd:TypeName>System.Int32</rd:TypeName>
         </Field>
-        <Field Name="ShiftLabel">
-          <DataField>ShiftLabel</DataField>
-          <rd:TypeName>System.String</rd:TypeName>
+        <Field Name="EndShiftId">
+          <DataField>EndShiftId</DataField>
+          <rd:TypeName>System.Int32</rd:TypeName>
         </Field>
       </Fields>
     </DataSet>
@@ -127,15 +126,15 @@ WHERE TRY_CONVERT(int, [ShiftID]) BETWEEN @StartShift AND @EndShift
       <Prompt>Start Shift</Prompt>
       <DefaultValue>
         <DataSetReference>
-          <DataSetName>CurrentShift</DataSetName>
-          <ValueField>CurrentShiftId</ValueField>
+          <DataSetName>PeriodPresets</DataSetName>
+          <ValueField>StartShiftId</ValueField>
         </DataSetReference>
       </DefaultValue>
       <AvailableValues>
         <DataSetReference>
-          <DataSetName>ShiftList</DataSetName>
-          <ValueField>ShiftId</ValueField>
-          <LabelField>ShiftLabel</LabelField>
+          <DataSetName>PeriodPresets</DataSetName>
+          <ValueField>StartShiftId</ValueField>
+          <LabelField>PresetLabel</LabelField>
         </DataSetReference>
       </AvailableValues>
     </ReportParameter>
@@ -144,15 +143,18 @@ WHERE TRY_CONVERT(int, [ShiftID]) BETWEEN @StartShift AND @EndShift
       <Prompt>End Shift</Prompt>
       <DefaultValue>
         <DataSetReference>
-          <DataSetName>CurrentShift</DataSetName>
-          <ValueField>CurrentShiftId</ValueField>
+          <DataSetName>PeriodPresets</DataSetName>
+          <ValueField>EndShiftId</ValueField>
         </DataSetReference>
       </DefaultValue>
       <AvailableValues>
         <DataSetReference>
-          <DataSetName>ShiftList</DataSetName>
-          <ValueField>ShiftId</ValueField>
-          <LabelField>ShiftLabel</LabelField>
+          <DataSetName>PeriodPresets</DataSetName>
+          <ValueField>EndShiftId</ValueField>
+          <LabelField>PresetLabel</LabelField>
+        </DataSetReference>
+      </AvailableValues>
+    </ReportParameter>
         </DataSetReference>
       </AvailableValues>
     </ReportParameter>
