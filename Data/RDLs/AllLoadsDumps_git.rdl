@@ -5,14 +5,85 @@
     <DataSource Name="SICDataSource">
       <DataSourceReference>/PROD/Albian D6 Dispatch/Auxiliary/Data Sources/DispatchDataSource</DataSourceReference>
       <rd:SecurityType>None</rd:SecurityType>
-      <rd:DataSourceID>AllLoadsDumps-SICDataSource</rd:DataSourceID>
+      <rd:DataSourceID>e99af5f9-378c-4d63-a8a3-4bb0b5c1f3b8</rd:DataSourceID>
     </DataSource>
   </DataSources>
   <DataSets>
+    <DataSet Name="CurrentShift">
+      <Query>
+        <DataSourceName>SICDataSource</DataSourceName>
+        <CommandText>SELECT CAST(
+    FORMAT(
+        CASE WHEN DATEPART(HOUR, GETDATE()) &lt; 6
+             THEN DATEADD(DAY, -1, GETDATE())
+             ELSE GETDATE()
+        END,
+        'yyMMdd'
+    ) +
+    CASE WHEN DATEPART(HOUR, GETDATE()) &gt;= 6
+              AND DATEPART(HOUR, GETDATE()) &lt; 18
+         THEN '001'
+         ELSE '002'
+    END
+AS INT) AS CurrentShiftId;</CommandText>
+        <Timeout>0</Timeout>
+      </Query>
+      <Fields>
+        <Field Name="CurrentShiftId">
+          <DataField>CurrentShiftId</DataField>
+          <rd:TypeName>System.Int32</rd:TypeName>
+        </Field>
+      </Fields>
+    </DataSet>
+    <DataSet Name="PeriodPresets">
+      <Query>
+        <DataSourceName>SICDataSource</DataSourceName>
+        <CommandText>SELECT 'Current Month' AS PresetLabel,
+       CAST(FORMAT(DATEFROMPARTS(YEAR(GETDATE()),MONTH(GETDATE()),1),'yyMMdd')+'001' AS INT) AS StartShiftId,
+       CAST(FORMAT(EOMONTH(GETDATE()),'yyMMdd')+'002' AS INT) AS EndShiftId
+UNION ALL
+SELECT 'Previous Month' AS PresetLabel,
+       CAST(FORMAT(DATEFROMPARTS(YEAR(DATEADD(MONTH,-1,GETDATE())),MONTH(DATEADD(MONTH,-1,GETDATE())),1),'yyMMdd')+'001' AS INT) AS StartShiftId,
+       CAST(FORMAT(EOMONTH(DATEADD(MONTH,-1,GETDATE())),'yyMMdd')+'002' AS INT) AS EndShiftId
+UNION ALL
+SELECT 'Current Shift' AS PresetLabel,
+       CAST(FORMAT(CASE WHEN DATEPART(HOUR,GETDATE())&lt;6 THEN DATEADD(DAY,-1,GETDATE()) ELSE GETDATE() END,'yyMMdd')+CASE WHEN DATEPART(HOUR,GETDATE())&gt;=6 AND DATEPART(HOUR,GETDATE())&lt;18 THEN '001' ELSE '002' END AS INT) AS StartShiftId,
+       CAST(FORMAT(CASE WHEN DATEPART(HOUR,GETDATE())&lt;6 THEN DATEADD(DAY,-1,GETDATE()) ELSE GETDATE() END,'yyMMdd')+CASE WHEN DATEPART(HOUR,GETDATE())&gt;=6 AND DATEPART(HOUR,GETDATE())&lt;18 THEN '001' ELSE '002' END AS INT) AS EndShiftId
+UNION ALL
+SELECT 'Last Week' AS PresetLabel,
+       CAST(FORMAT(DATEADD(DAY,-(DATEPART(WEEKDAY,GETDATE())+5)%7-7,CAST(GETDATE() AS DATE)),'yyMMdd')+'001' AS INT) AS StartShiftId,
+       CAST(FORMAT(DATEADD(DAY,-(DATEPART(WEEKDAY,GETDATE())+5)%7-1,CAST(GETDATE() AS DATE)),'yyMMdd')+'002' AS INT) AS EndShiftId</CommandText>
+        <Timeout>0</Timeout>
+      </Query>
+      <Fields>
+        <Field Name="PresetLabel">
+          <DataField>PresetLabel</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="StartShiftId">
+          <DataField>StartShiftId</DataField>
+          <rd:TypeName>System.Int32</rd:TypeName>
+        </Field>
+        <Field Name="EndShiftId">
+          <DataField>EndShiftId</DataField>
+          <rd:TypeName>System.Int32</rd:TypeName>
+        </Field>
+      </Fields>
+    </DataSet>
     <DataSet Name="dsAllLoadsDumps">
       <Query>
         <DataSourceName>SICDataSource</DataSourceName>
-        <CommandText>SELECT * FROM [ASEOperational].[dispowner].[SIC_AllLoadsDumps]</CommandText>
+        <CommandText>SELECT *
+FROM [ASEOperational].[dispowner].[SIC_AllLoadsDumps]
+WHERE TRY_CONVERT(int, [ShiftId]) BETWEEN @StartShift AND @EndShift</CommandText>
+        <QueryParameters>
+          <QueryParameter Name="@StartShift">
+            <Value>=Parameters!StartShift.Value</Value>
+          </QueryParameter>
+          <QueryParameter Name="@EndShift">
+            <Value>=Parameters!EndShift.Value</Value>
+          </QueryParameter>
+        </QueryParameters>
         <Timeout>0</Timeout>
       </Query>
       <Fields>
@@ -231,6 +302,42 @@
       </Fields>
     </DataSet>
   </DataSets>
+  <ReportParameters>
+    <ReportParameter Name="StartShift">
+      <DataType>Integer</DataType>
+      <Prompt>Start Shift</Prompt>
+      <DefaultValue>
+        <DataSetReference>
+          <DataSetName>PeriodPresets</DataSetName>
+          <ValueField>StartShiftId</ValueField>
+        </DataSetReference>
+      </DefaultValue>
+      <ValidValues>
+        <DataSetReference>
+          <DataSetName>PeriodPresets</DataSetName>
+          <ValueField>StartShiftId</ValueField>
+          <LabelField>PresetLabel</LabelField>
+        </DataSetReference>
+      </ValidValues>
+    </ReportParameter>
+    <ReportParameter Name="EndShift">
+      <DataType>Integer</DataType>
+      <Prompt>End Shift</Prompt>
+      <DefaultValue>
+        <DataSetReference>
+          <DataSetName>PeriodPresets</DataSetName>
+          <ValueField>EndShiftId</ValueField>
+        </DataSetReference>
+      </DefaultValue>
+      <ValidValues>
+        <DataSetReference>
+          <DataSetName>PeriodPresets</DataSetName>
+          <ValueField>EndShiftId</ValueField>
+          <LabelField>PresetLabel</LabelField>
+        </DataSetReference>
+      </ValidValues>
+    </ReportParameter>
+  </ReportParameters>
   <Body>
     <ReportItems>
       <Tablix Name="tblAllLoadsDumps">
@@ -2990,5 +3097,5 @@
     <Style />
   </Page>
   <Language>en-US</Language>
-  <rd:ReportID>AllLoadsDumps-SIC-Export</rd:ReportID>
+  <rd:ReportID>9e94d9ec-8c72-4d7f-9d62-1ef12d9b0728</rd:ReportID>
 </Report>
