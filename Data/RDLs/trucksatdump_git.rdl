@@ -6,12 +6,12 @@
 
   Changes from original trucksatdump.rdl:
   - DataSource Initial Catalog set to ASEOperational
-  - ShiftList dataset queries [CommonASE].[TrucksAtDump] directly;
-    ShiftLabel derived from ShiftId (YYMMDDNNN) — no separate Shifts table needed
+  - PeriodPresets dataset provides named preset options (Current Month, Previous Month, Current Shift, Last Week, Current Week);
+    StartShift/EndShift parameters are populated from PeriodPresets and default to Current Month
   - Main query targets [CommonASE].[TrucksAtDump] with
     WHERE ShiftId BETWEEN @StartShift AND @EndShift
-  - Parameters StartShift / EndShift populated from ShiftList with friendly labels
-    e.g. "2026-08-01 Day Shift", "2026-08-01 Night Shift"
+  - Parameters StartShift / EndShift populated from PeriodPresets with named period labels
+    e.g. "Current Month", "Current Shift" (today's active shift), "Last Week" (Mon–Sun prev week)
   - Columns: ShiftId, DumpLocation, LogTime, NextLogTime, DurationSecond,
              Hos, RN, TrucksAtDump, TrucksInQueue, QStatus
 -->
@@ -31,7 +31,7 @@
         <DataProvider>SQL</DataProvider>
         <ConnectString>Data Source=#{SIC_DB_SERVER};Initial Catalog=ASEOperational;Integrated Security=SSPI</ConnectString>
       </ConnectionProperties>
-      <rd:DataSourceID>sic-datasource-git</rd:DataSourceID>
+      <rd:DataSourceID>f0cef343-e43f-44a2-bb7d-2488a3c0bef9</rd:DataSourceID>
     </DataSource>
   </DataSources>
 
@@ -65,6 +65,34 @@ AS INT) AS CurrentShiftId;
       </Query>
       <Fields>
         <Field Name="CurrentShiftId"> <DataField>CurrentShiftId</DataField> <rd:TypeName>System.Int32</rd:TypeName> </Field>
+      </Fields>
+    </DataSet>
+
+    <DataSet Name="PeriodPresets">
+      <Query>
+        <DataSourceName>SIC_DS</DataSourceName>
+        <CommandText>
+SELECT 'Current Month' AS PresetLabel,
+       CAST(FORMAT(DATEFROMPARTS(YEAR(GETDATE()),MONTH(GETDATE()),1),'yyMMdd')+'001' AS INT) AS StartShiftId,
+       CAST(FORMAT(EOMONTH(GETDATE()),'yyMMdd')+'002' AS INT) AS EndShiftId
+UNION ALL
+SELECT 'Previous Month' AS PresetLabel,
+       CAST(FORMAT(DATEFROMPARTS(YEAR(DATEADD(MONTH,-1,GETDATE())),MONTH(DATEADD(MONTH,-1,GETDATE())),1),'yyMMdd')+'001' AS INT) AS StartShiftId,
+       CAST(FORMAT(EOMONTH(DATEADD(MONTH,-1,GETDATE())),'yyMMdd')+'002' AS INT) AS EndShiftId
+UNION ALL
+SELECT 'Current Shift' AS PresetLabel,
+       CAST(FORMAT(CASE WHEN DATEPART(HOUR,GETDATE())&lt;6 THEN DATEADD(DAY,-1,GETDATE()) ELSE GETDATE() END,'yyMMdd')+CASE WHEN DATEPART(HOUR,GETDATE())&gt;=6 AND DATEPART(HOUR,GETDATE())&lt;18 THEN '001' ELSE '002' END AS INT) AS StartShiftId,
+       CAST(FORMAT(CASE WHEN DATEPART(HOUR,GETDATE())&lt;6 THEN DATEADD(DAY,-1,GETDATE()) ELSE GETDATE() END,'yyMMdd')+CASE WHEN DATEPART(HOUR,GETDATE())&gt;=6 AND DATEPART(HOUR,GETDATE())&lt;18 THEN '001' ELSE '002' END AS INT) AS EndShiftId
+UNION ALL
+SELECT 'Last Week' AS PresetLabel,
+       CAST(FORMAT(DATEADD(DAY,-(DATEPART(WEEKDAY,GETDATE())+5)%7-7,CAST(GETDATE() AS DATE)),'yyMMdd')+'001' AS INT) AS StartShiftId,
+       CAST(FORMAT(DATEADD(DAY,-(DATEPART(WEEKDAY,GETDATE())+5)%7-1,CAST(GETDATE() AS DATE)),'yyMMdd')+'002' AS INT) AS EndShiftId
+        </CommandText>
+      </Query>
+      <Fields>
+        <Field Name="PresetLabel"> <DataField>PresetLabel</DataField> <rd:TypeName>System.String</rd:TypeName> </Field>
+        <Field Name="StartShiftId"> <DataField>StartShiftId</DataField> <rd:TypeName>System.Int32</rd:TypeName> </Field>
+        <Field Name="EndShiftId"> <DataField>EndShiftId</DataField> <rd:TypeName>System.Int32</rd:TypeName> </Field>
       </Fields>
     </DataSet>
 
@@ -123,10 +151,17 @@ ORDER BY ShiftId, DumpLocation, LogTime;
       <Prompt>Start Shift</Prompt>
       <DefaultValue>
         <DataSetReference>
-          <DataSetName>CurrentShift</DataSetName>
-          <ValueField>CurrentShiftId</ValueField>
+          <DataSetName>PeriodPresets</DataSetName>
+          <ValueField>StartShiftId</ValueField>
         </DataSetReference>
       </DefaultValue>
+      <ValidValues>
+        <DataSetReference>
+          <DataSetName>PeriodPresets</DataSetName>
+          <ValueField>StartShiftId</ValueField>
+          <LabelField>PresetLabel</LabelField>
+        </DataSetReference>
+      </ValidValues>
     </ReportParameter>
 
     <ReportParameter Name="EndShift">
@@ -134,10 +169,17 @@ ORDER BY ShiftId, DumpLocation, LogTime;
       <Prompt>End Shift</Prompt>
       <DefaultValue>
         <DataSetReference>
-          <DataSetName>CurrentShift</DataSetName>
-          <ValueField>CurrentShiftId</ValueField>
+          <DataSetName>PeriodPresets</DataSetName>
+          <ValueField>EndShiftId</ValueField>
         </DataSetReference>
       </DefaultValue>
+      <ValidValues>
+        <DataSetReference>
+          <DataSetName>PeriodPresets</DataSetName>
+          <ValueField>EndShiftId</ValueField>
+          <LabelField>PresetLabel</LabelField>
+        </DataSetReference>
+      </ValidValues>
     </ReportParameter>
 
   </ReportParameters>
@@ -255,6 +297,6 @@ ORDER BY ShiftId, DumpLocation, LogTime;
   </ReportSections>
 
   <rd:ReportUnitType>Inch</rd:ReportUnitType>
-  <rd:ReportID>trucksatdump-git-albian-sic</rd:ReportID>
+  <rd:ReportID>a45559eb-9ed4-4df4-9f52-d78bcf9a8d01</rd:ReportID>
 
 </Report>
