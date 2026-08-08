@@ -6,12 +6,12 @@
 
   Changes from original trucksatdump.rdl:
   - DataSource Initial Catalog set to ASEOperational
-  - PeriodPresets dataset provides two named preset options (Current, Current Week);
-    StartShift/EndShift parameters are populated from PeriodPresets and default to Current
+  - PeriodPresets dataset provides named preset options (Current Month, Previous Month, Current Shift, Last Week, Current Week);
+    StartShift/EndShift parameters are populated from PeriodPresets and default to Current Month
   - Main query targets [CommonASE].[TrucksAtDump] with
     WHERE ShiftId BETWEEN @StartShift AND @EndShift
   - Parameters StartShift / EndShift populated from PeriodPresets with named period labels
-    e.g. "Current" (previous month), "Current Week" (Mon–today)
+    e.g. "Current Month", "Current Shift" (today's active shift), "Last Week" (Mon–Sun prev week)
   - Columns: ShiftId, DumpLocation, LogTime, NextLogTime, DurationSecond,
              Hos, RN, TrucksAtDump, TrucksInQueue, QStatus
 -->
@@ -80,9 +80,13 @@ SELECT 'Previous Month' AS PresetLabel,
        CAST(FORMAT(DATEFROMPARTS(YEAR(DATEADD(MONTH,-1,GETDATE())),MONTH(DATEADD(MONTH,-1,GETDATE())),1),'yyMMdd')+'001' AS INT) AS StartShiftId,
        CAST(FORMAT(EOMONTH(DATEADD(MONTH,-1,GETDATE())),'yyMMdd')+'002' AS INT) AS EndShiftId
 UNION ALL
-SELECT 'Current Week' AS PresetLabel,
-       CAST(FORMAT(DATEADD(DAY,-(DATEPART(WEEKDAY,GETDATE())+5)%7,CAST(GETDATE() AS DATE)),'yyMMdd')+'001' AS INT) AS StartShiftId,
-       CAST(FORMAT(CAST(GETDATE() AS DATE),'yyMMdd')+CASE WHEN DATEPART(HOUR,GETDATE())&gt;=6 AND DATEPART(HOUR,GETDATE())&lt;18 THEN '001' ELSE '002' END AS INT) AS EndShiftId;
+SELECT 'Current Shift' AS PresetLabel,
+       CAST(FORMAT(CASE WHEN DATEPART(HOUR,GETDATE())&lt;6 THEN DATEADD(DAY,-1,GETDATE()) ELSE GETDATE() END,'yyMMdd')+CASE WHEN DATEPART(HOUR,GETDATE())&gt;=6 AND DATEPART(HOUR,GETDATE())&lt;18 THEN '001' ELSE '002' END AS INT) AS StartShiftId,
+       CAST(FORMAT(CASE WHEN DATEPART(HOUR,GETDATE())&lt;6 THEN DATEADD(DAY,-1,GETDATE()) ELSE GETDATE() END,'yyMMdd')+CASE WHEN DATEPART(HOUR,GETDATE())&gt;=6 AND DATEPART(HOUR,GETDATE())&lt;18 THEN '001' ELSE '002' END AS INT) AS EndShiftId
+UNION ALL
+SELECT 'Last Week' AS PresetLabel,
+       CAST(FORMAT(DATEADD(DAY,-(DATEPART(WEEKDAY,GETDATE())+5)%7-7,CAST(GETDATE() AS DATE)),'yyMMdd')+'001' AS INT) AS StartShiftId,
+       CAST(FORMAT(DATEADD(DAY,-(DATEPART(WEEKDAY,GETDATE())+5)%7-1,CAST(GETDATE() AS DATE)),'yyMMdd')+'002' AS INT) AS EndShiftId;
         </CommandText>
       </Query>
       <Fields>
