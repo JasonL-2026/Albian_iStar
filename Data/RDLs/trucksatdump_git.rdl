@@ -86,7 +86,7 @@ SELECT 'Current Shift' AS PresetLabel,
 UNION ALL
 SELECT 'Last Week' AS PresetLabel,
        CAST(FORMAT(DATEADD(DAY,-(DATEPART(WEEKDAY,GETDATE())+5)%7-7,CAST(GETDATE() AS DATE)),'yyMMdd')+'001' AS INT) AS StartShiftId,
-       CAST(FORMAT(DATEADD(DAY,-(DATEPART(WEEKDAY,GETDATE())+5)%7-1,CAST(GETDATE() AS DATE)),'yyMMdd')+'002' AS INT) AS EndShiftId;
+       CAST(FORMAT(DATEADD(DAY,-(DATEPART(WEEKDAY,GETDATE())+5)%7-1,CAST(GETDATE() AS DATE)),'yyMMdd')+'002' AS INT) AS EndShiftId
         </CommandText>
       </Query>
       <Fields>
