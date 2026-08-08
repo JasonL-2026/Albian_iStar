@@ -1,0 +1,108 @@
+name: Governance
+
+on:
+  pull_request:
+    branches: [DEV, TEST, PROD, BACKUP]
+
+jobs:
+  enforce-promotion-flow:
+    name: Enforce branch promotion flow
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate allowed source -> target branch mapping
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          echo "Validating promotion flow: ${HEAD_REF} -> ${BASE_REF}"
+          case "${BASE_REF}" in
+            DEV)
+              if [[ "${HEAD_REF}" =~ ^(feature|fix)/.+$ ]]; then
+                echo "OK: feature/fix branch to DEV."
+              else
+                echo "ERROR: DEV PRs must originate from feature/* or fix/* branches."
+                exit 1
+              fi
+              ;;
+            TEST)
+              if [[ "${HEAD_REF}" == "DEV" ]]; then
+                echo "OK: DEV -> TEST."
+              else
+                echo "ERROR: TEST PRs must originate from DEV only."
+                exit 1
+              fi
+              ;;
+            PROD)
+              if [[ "${HEAD_REF}" == "TEST" ]]; then
+                echo "OK: TEST -> PROD."
+              else
+                echo "ERROR: PROD PRs must originate from TEST only."
+                exit 1
+              fi
+              ;;
+            BACKUP)
+              if [[ "${HEAD_REF}" == "PROD" ]]; then
+                echo "OK: PROD -> BACKUP snapshot update."
+              else
+                echo "ERROR: BACKUP PRs must originate from PROD only."
+                exit 1
+              fi
+              ;;
+            *)
+              echo "ERROR: Unsupported base branch '${BASE_REF}'."
+              exit 1
+              ;;
+          esac
+
+  require-pr-evidence:
+    name: Require PR validation evidence
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate PR template evidence fields
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          import sys
+
+          body = os.environ.get("PR_BODY") or ""
+          errors = []
+
+          if not re.search(r"Dashboard renders without errors:\s*\[(x|X)\]\s*Yes", body):
+              errors.append("Dashboard render confirmation must be checked: [x] Yes")
+
+          section_rules = [
+              ("Branch being merged into", r"Branch being merged into:\s*(?!<!--)([^\n]+)"),
+              ("Data used to test", r"\*\*Data used to test:\*\*\s*([\s\S]*?)\n\s*\n"),
+              ("Key outputs validated", r"\*\*Key outputs validated \(scores, waterfall totals\):\*\*\s*([\s\S]*?)\n\s*\n"),
+              ("Shifts validated", r"## Shifts validated\s*([\s\S]*?)\n\s*\n"),
+          ]
+
+          for label, pattern in section_rules:
+              m = re.search(pattern, body, flags=re.IGNORECASE)
+              if not m:
+                  errors.append(f"Missing or empty section: {label}")
+                  continue
+              value = re.sub(r"<!--[\s\S]*?-->", "", m.group(1)).strip()
+              if not value:
+                  errors.append(f"Section '{label}' must be filled in")
+
+          if not re.search(r"Key outputs validated[\s\S]*?\d+(\.\d+)?\s*%", body, flags=re.IGNORECASE):
+              errors.append("Key outputs validated section must include KPI score percentages")
+
+          if not re.search(r"Shifts validated[\s\S]*?\d{9}", body, flags=re.IGNORECASE):
+              errors.append("Shifts validated section must include at least one 9-digit ShiftId")
+
+          if not re.search(r"Linked to issue:\s*`?\s*Closes\s*#\d+", body, flags=re.IGNORECASE):
+              errors.append("Checklist must include a linked issue in the format: Closes #<number>")
+
+          if errors:
+              print("PR evidence validation failed:")
+              for e in errors:
+                  print(f"- {e}")
+              sys.exit(1)
+
+          print("PR evidence validation passed.")
+          PY

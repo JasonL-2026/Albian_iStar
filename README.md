@@ -96,13 +96,38 @@ They contain sensitive production data and change every shift.
 
 | Branch | Purpose | Who can merge |
 |--------|---------|---------------|
-| `PROD` | Stable production releases | Lead/owner only (via PR from TEST, 2 approvals) |
-| `TEST` | Validated before release | Senior developers (via PR from DEV, 1 approval) |
-| `DEV` | Integration branch | All developers (via PR from feature branches, 1 approval) |
-| `feature/<name>` | Individual feature work | Cut from DEV; merge back to DEV via PR |
-| `fix/<name>` | Bug fixes | Cut from DEV (or TEST for hotfixes); merge via PR |
+| `PROD` | Stable production releases | Lead/owner only (via PR from TEST, 2 approvals + release sign-off) |
+| `TEST` | Integration and validation before release | Senior developers (via PR from session/feature/fix branches, 1 approval) |
+| `BACKUP` | Immutable production recovery snapshots | Lead/owner only (via PR from PROD snapshot update) |
+| `session/<name>` | Session-specific work branch | Created per coding session; merged to TEST via PR |
+| `feature/<name>` | Individual feature work | Merged to TEST via PR |
+| `fix/<name>` | Bug-fix work | Merged to TEST via PR |
 
-**Never commit directly to DEV, TEST, or PROD.** All changes go through a pull request.
+**Never commit directly to TEST, PROD, or BACKUP.** All changes go through pull requests.
+
+### Required PR Rules
+
+1. **Allowed PR paths only**
+   - `session/*`, `feature/*`, or `fix/*` → `TEST`
+   - `TEST` → `PROD`
+   - `PROD` → `BACKUP`
+2. **Required checks must pass** before merge:
+   - CI syntax/build checks
+   - Data-integrity checks (required CSV schema, ShiftId consistency, KPI tolerance)
+3. **Required approvals**
+   - To `TEST`: at least 1 approval
+   - To `PROD`: at least 2 approvals plus release sign-off
+   - To `BACKUP`: lead/owner approval only
+4. **PR evidence is mandatory**
+   - Completed PR template
+   - ShiftIds validated
+   - Key KPI outputs recorded
+   - Dashboard render confirmation
+   - Linked issue (`Closes #...`)
+5. **Protection controls**
+   - No force push, no branch deletion, and no bypass of required checks on `TEST`/`PROD`/`BACKUP`
+6. **Release traceability**
+   - For each `TEST` → `PROD` merge: create release/tag, then update `BACKUP` from the previous `PROD` state.
 
 ---
 
@@ -120,10 +145,33 @@ After each TEST → PROD merge, a GitHub Release is created and the built `Haula
 
 ## Contributing
 
-1. Create a branch from `DEV`: `git checkout -b feature/my-feature DEV`
+1. Create a branch from `TEST` (or from latest branch tip agreed by team): `git checkout -b session/my-session TEST`
 2. Make your changes and test locally with `python build_dashboard.py`
 3. If you changed any calculation, update `Dashboard_Methodology.md`
-4. Open a pull request targeting `DEV`
+4. Open a pull request targeting `TEST`
 5. Fill in the PR template — include which shifts were used to validate
+
+### Step-by-step: move tested changes from a new branch to `TEST`
+
+1. Confirm you are on your session/feature/fix branch:
+   - `git checkout session/my-change`
+2. Confirm everything is committed:
+   - `git status`
+   - If needed: `git add .` then `git commit -m "Describe tested change"`
+3. Push your branch:
+   - `git push -u origin session/my-change`
+4. Open a PR in GitHub:
+   - Base: `TEST`
+   - Compare: `session/my-change`
+5. Complete the PR template:
+   - Data used to test
+   - ShiftIds validated
+   - Key KPI outputs
+   - Dashboard render confirmation
+   - Linked issue (`Closes #...`)
+6. Wait for required checks (CI + data-integrity gates) to pass.
+7. Get required approval(s) for `TEST`.
+8. Merge the PR into `TEST`.
+9. Optionally delete the source branch after merge.
 
 See [Dashboard_Methodology.md](Dashboard_Methodology.md) for the full calculation specification.

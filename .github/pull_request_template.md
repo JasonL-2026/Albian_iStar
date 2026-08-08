@@ -10,7 +10,9 @@
 - [ ] Documentation only
 
 ## Testing
-**Branch being merged into:** <!-- DEV / TEST / PROD -->
+**Branch being merged into:** <!-- TEST / PROD / BACKUP -->
+
+**PR path:** <!-- e.g., session/my-change -> TEST, TEST -> PROD, PROD -> BACKUP -->
 
 **Data used to test:**
 <!-- e.g., "AllLoadsDumps.csv for shifts 260801D, 260801N" -->
@@ -28,6 +30,7 @@
 - [ ] `Dashboard_Methodology.md` updated (required if any calculation changed)
 - [ ] No live operational CSVs committed to the repo
 - [ ] Linked to issue: `Closes #`
+- [ ] PR path follows policy (`session|feature|fix -> TEST`, `TEST -> PROD`, `PROD -> BACKUP`)
 
 ## Shifts validated
 <!-- List the ShiftIds used for end-to-end testing -->
