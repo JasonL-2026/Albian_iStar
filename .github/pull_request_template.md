@@ -10,18 +10,20 @@
 - [ ] Documentation only
 
 ## Testing
-**Branch being merged into:** <!-- TEST / PROD / BACKUP -->
+<!-- Governance check requires all fields in this section to be completed. -->
 
-**PR path:** <!-- e.g., session/my-change -> TEST, TEST -> PROD, PROD -> BACKUP -->
+**Branch being merged into:** <!-- DEV / TEST / PROD / BACKUP -->
+
+**PR path:** <!-- e.g., feature/my-change -> DEV, DEV -> TEST, TEST -> PROD, PROD -> BACKUP -->
 
 **Data used to test:**
-<!-- e.g., "AllLoadsDumps.csv for shifts 260801D, 260801N" -->
+<!-- e.g., "Data/samples with python build_dashboard.py" or "AllLoadsDumps.csv for shifts 260801001, 260801002" -->
 
 
 **Dashboard renders without errors:** [ ] Yes
 
 **Key outputs validated (scores, waterfall totals):**
-<!-- e.g., "Combined Haulage Score ≈ 64 %, Loading Score ≈ 50 %" -->
+<!-- Include at least one KPI percentage, e.g., "Combined Haulage Score ≈ 64%, Loading Score ≈ 50%" -->
 
 
 ## Checklist
@@ -30,10 +32,10 @@
 - [ ] `Dashboard_Methodology.md` updated (required if any calculation changed)
 - [ ] No live operational CSVs committed to the repo
 - [ ] Linked to issue: `Closes #`
-- [ ] PR path follows policy (`session|feature|fix -> TEST`, `TEST -> PROD`, `PROD -> BACKUP`)
+- [ ] PR path follows policy (`feature|fix -> DEV`, `DEV -> TEST`, `TEST -> PROD`, `PROD -> BACKUP`)
 
 ## Shifts validated
-<!-- List the ShiftIds used for end-to-end testing -->
+<!-- List at least one 9-digit ShiftId used for end-to-end testing -->
 
 
 ## Notes for reviewer
