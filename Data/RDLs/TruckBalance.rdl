@@ -5,14 +5,16 @@
     <DataSource Name="SICDataSource">
       <DataSourceReference>/PROD/Albian D6 Dispatch/Auxiliary/Data Sources/DispatchDataSource</DataSourceReference>
       <rd:SecurityType>None</rd:SecurityType>
-      <rd:DataSourceID>TruckBalance-SICDataSource</rd:DataSourceID>
+      <rd:DataSourceID>0baa5d78-5864-4f36-9bb2-2b7033b58c94</rd:DataSourceID>
     </DataSource>
   </DataSources>
   <DataSets>
     <DataSet Name="dsTruckBalance">
       <Query>
         <DataSourceName>SICDataSource</DataSourceName>
-        <CommandText>SELECT * FROM [ASEOperational].[CommonASE].[ShovelTruckBalance]</CommandText>
+        <CommandText>SELECT * FROM [ASEOperational].[CommonASE].[ShovelTruckBalance]
+WHERE TRY_CONVERT(datetime, [Timestamp]) &gt;= DATEFROMPARTS(YEAR(DATEADD(MONTH, -1, GETDATE())), MONTH(DATEADD(MONTH, -1, GETDATE())), 1)
+  AND TRY_CONVERT(datetime, [Timestamp]) &lt; DATEADD(MONTH, 1, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1))</CommandText>
         <Timeout>0</Timeout>
       </Query>
       <Fields>
@@ -350,5 +352,5 @@
     <Style />
   </Page>
   <Language>en-US</Language>
-  <rd:ReportID>TruckBalance-SIC-Export</rd:ReportID>
+  <rd:ReportID>65df81f7-c78f-4338-becb-8aa89b76afe5</rd:ReportID>
 </Report>
