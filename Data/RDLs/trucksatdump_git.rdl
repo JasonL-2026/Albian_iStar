@@ -155,13 +155,6 @@ ORDER BY ShiftId, DumpLocation, LogTime;
           <ValueField>StartShiftId</ValueField>
         </DataSetReference>
       </DefaultValue>
-      <ValidValues>
-        <DataSetReference>
-          <DataSetName>PeriodPresets</DataSetName>
-          <ValueField>StartShiftId</ValueField>
-          <LabelField>PresetLabel</LabelField>
-        </DataSetReference>
-      </ValidValues>
     </ReportParameter>
 
     <ReportParameter Name="EndShift">
@@ -173,13 +166,6 @@ ORDER BY ShiftId, DumpLocation, LogTime;
           <ValueField>EndShiftId</ValueField>
         </DataSetReference>
       </DefaultValue>
-      <ValidValues>
-        <DataSetReference>
-          <DataSetName>PeriodPresets</DataSetName>
-          <ValueField>EndShiftId</ValueField>
-          <LabelField>PresetLabel</LabelField>
-        </DataSetReference>
-      </ValidValues>
     </ReportParameter>
 
   </ReportParameters>

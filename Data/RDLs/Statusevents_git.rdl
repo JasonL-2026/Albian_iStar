@@ -156,13 +156,6 @@ WHERE TRY_CONVERT(bigint, [ShiftId]) % 1000000000 BETWEEN @StartShift AND @EndSh
           <ValueField>StartShiftId</ValueField>
         </DataSetReference>
       </DefaultValue>
-      <ValidValues>
-        <DataSetReference>
-          <DataSetName>PeriodPresets</DataSetName>
-          <ValueField>StartShiftId</ValueField>
-          <LabelField>PresetLabel</LabelField>
-        </DataSetReference>
-      </ValidValues>
     </ReportParameter>
     <ReportParameter Name="EndShift">
       <DataType>Integer</DataType>
@@ -173,13 +166,6 @@ WHERE TRY_CONVERT(bigint, [ShiftId]) % 1000000000 BETWEEN @StartShift AND @EndSh
           <ValueField>EndShiftId</ValueField>
         </DataSetReference>
       </DefaultValue>
-      <ValidValues>
-        <DataSetReference>
-          <DataSetName>PeriodPresets</DataSetName>
-          <ValueField>EndShiftId</ValueField>
-          <LabelField>PresetLabel</LabelField>
-        </DataSetReference>
-      </ValidValues>
     </ReportParameter>
   </ReportParameters>
   <Body>

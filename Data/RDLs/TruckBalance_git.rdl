@@ -132,13 +132,6 @@ AS INT) BETWEEN @StartShift AND @EndShift</CommandText>
           <ValueField>StartShiftId</ValueField>
         </DataSetReference>
       </DefaultValue>
-      <ValidValues>
-        <DataSetReference>
-          <DataSetName>PeriodPresets</DataSetName>
-          <ValueField>StartShiftId</ValueField>
-          <LabelField>PresetLabel</LabelField>
-        </DataSetReference>
-      </ValidValues>
     </ReportParameter>
     <ReportParameter Name="EndShift">
       <DataType>Integer</DataType>
@@ -149,13 +142,6 @@ AS INT) BETWEEN @StartShift AND @EndShift</CommandText>
           <ValueField>EndShiftId</ValueField>
         </DataSetReference>
       </DefaultValue>
-      <ValidValues>
-        <DataSetReference>
-          <DataSetName>PeriodPresets</DataSetName>
-          <ValueField>EndShiftId</ValueField>
-          <LabelField>PresetLabel</LabelField>
-        </DataSetReference>
-      </ValidValues>
     </ReportParameter>
   </ReportParameters>
   <Body>

@@ -3951,13 +3951,6 @@ WHERE TRY_CONVERT(int, [ShiftId]) BETWEEN @StartShift AND @EndShift</CommandText
         </DataSetReference>
       </DefaultValue>
       <Prompt>Start Shift</Prompt>
-      <ValidValues>
-        <DataSetReference>
-          <DataSetName>PeriodPresets</DataSetName>
-          <ValueField>StartShiftId</ValueField>
-          <LabelField>PresetLabel</LabelField>
-        </DataSetReference>
-      </ValidValues>
     </ReportParameter>
     <ReportParameter Name="EndShift">
       <DataType>Integer</DataType>
@@ -3968,13 +3961,6 @@ WHERE TRY_CONVERT(int, [ShiftId]) BETWEEN @StartShift AND @EndShift</CommandText
         </DataSetReference>
       </DefaultValue>
       <Prompt>End Shift</Prompt>
-      <ValidValues>
-        <DataSetReference>
-          <DataSetName>PeriodPresets</DataSetName>
-          <ValueField>EndShiftId</ValueField>
-          <LabelField>PresetLabel</LabelField>
-        </DataSetReference>
-      </ValidValues>
     </ReportParameter>
   </ReportParameters>
   <ReportParametersLayout>
