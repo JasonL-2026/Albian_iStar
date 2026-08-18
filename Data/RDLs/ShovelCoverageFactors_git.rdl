@@ -180,21 +180,19 @@ SELECT 'Previous Month' AS PresetLabel,
       <DataType>Integer</DataType>
       <Prompt>Start Shift</Prompt>
       <DefaultValue>
-        <DataSetReference>
-          <DataSetName>PeriodPresets</DataSetName>
-          <ValueField>StartShiftId</ValueField>
-        </DataSetReference>
-      </DefaultValue>
+          <Values>
+            <Value>=CInt(Format(DateSerial(Year(DateAdd("m",-1,Now())),Month(DateAdd("m",-1,Now())),1),"yyMMdd") & "001")</Value>
+          </Values>
+        </DefaultValue>
     </ReportParameter>
     <ReportParameter Name="EndShift">
       <DataType>Integer</DataType>
       <Prompt>End Shift</Prompt>
       <DefaultValue>
-        <DataSetReference>
-          <DataSetName>PeriodPresets</DataSetName>
-          <ValueField>EndShiftId</ValueField>
-        </DataSetReference>
-      </DefaultValue>
+          <Values>
+            <Value>=CInt(Format(DateSerial(Year(DateAdd("m",-1,Now())),Month(DateAdd("m",-1,Now()))+1,0),"yyMMdd") & "002")</Value>
+          </Values>
+        </DefaultValue>
     </ReportParameter>
   </ReportParameters>
   <Body>
