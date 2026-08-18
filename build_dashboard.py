@@ -822,6 +822,7 @@ def build_shift(sm):
         lx=defaultdict(list);ly=defaultdict(list);dxx=defaultdict(list);dyy=defaultdict(list)
         ltons=defaultdict(lambda:defaultdict(float));dtons=defaultdict(float);ltp=defaultdict(lambda:[0.0,0.0])
         full=defaultdict(lambda:[0.0,0,defaultdict(int),0,0.0,0.0])   # tons, count, matcounts, lockedCount, Σ full-haul dist(m), Σ expected dist(m)
+        prev_full=defaultdict(lambda:[0.0,0,defaultdict(int)])          # (prevDump,shovel) → [tons, count, {mat:count}]
         for r in rs:
             # left node = the actual shovel (Excav) so the placement axis always reads as a shovel and each
             # shovel's digs (bench + stockpile re-handle) aggregate into one node; fall back to LoadLocation if blank
@@ -834,6 +835,10 @@ def build_shift(sm):
                 lk=(r.get('FieldElock','NONE') not in ('','NONE')) or (r.get('FieldDlock','NONE') not in ('','NONE'))
                 f=full[(L,D)];f[0]+=t;f[1]+=1;f[2][m]+=1;f[4]+=num(r['FullHaulDistance']);f[5]+=num(r['FullExpectedDistance'])
                 if lk: f[3]+=1
+            # prev-dump: where the truck was before arriving at this shovel (from PREV_DUMP global dict)
+            pd=PREV_DUMP.get(id(r))
+            if pd and pd!='?':
+                pf=prev_full[(pd,L)]; pf[0]+=t; pf[1]+=1; pf[2][m]+=1
         allx=sorted(z for vs in list(lx.values())+list(dxx.values()) for z in vs if z>0)
         ally=sorted(z for vs in list(ly.values())+list(dyy.values()) for z in vs if z>0)
         def pc(a,p): return a[min(len(a)-1,int(len(a)*p))] if a else 0
@@ -849,10 +854,13 @@ def build_shift(sm):
             if ok(x,y): dumpN.append({'id':D,'tons':round(dtons[D])})
         lset={n['id'] for n in loadN}; dset={n['id'] for n in dumpN}
         fF=[{'from':k[0],'to':k[1],'tons':round(v[0]),'mat':max(v[2],key=v[2].get),'n':v[1],'nlock':v[3],'km':round(v[4]/v[1]/1000,1) if v[1] else 0,'kmE':round(v[5]/v[1]/1000,1) if v[1] else 0} for k,v in full.items() if k[0] in lset and k[1] in dset]
-        flowcache[pit]={'loadNodes':loadN,'dumpNodes':dumpN,'fullFlows':fF}
+        # prev-dump flows: (prevDump,shovel) pairs where shovel is a known load node (≥2 loads for signal)
+        prevF=[{'from':k[0],'to':k[1],'tons':round(v[0]),'mat':max(v[2],key=v[2].get),'n':v[1]}
+               for k,v in prev_full.items() if k[1] in lset and v[1]>=2]
+        flowcache[pit]={'loadNodes':loadN,'dumpNodes':dumpN,'fullFlows':fF,'prevFlows':prevF}
     def agg_flows(pits):
         if len(pits)==1: return flowcache[pits[0]]
-        out={'loadNodes':[],'dumpNodes':[],'fullFlows':[]}
+        out={'loadNodes':[],'dumpNodes':[],'fullFlows':[],'prevFlows':[]}
         for p in pits:
             for k in out: out[k]+=flowcache[p][k]
         return out
@@ -2182,6 +2190,15 @@ table.wf td.lead .ta{color:#2b2f36;font-weight:600}
       </div>
     </section>
 
+    <section class="page" id="pg-truckflow" hidden>
+      <div class="section">
+        <h2>Truck Flow <span class="sub" id="tfsub"></span></h2>
+        <div class="foot" style="margin-bottom:8px">Three-column flow: <b>Previous Dump</b> (where each truck came from) → <b>Shovel</b> (loading point) → <b>Dump</b> (destination). Ribbon width ∝ tonnage. Left ribbons show which dump each shovel is drawing trucks from; right ribbons show where each shovel dispatches to. Hover a ribbon for details.</div>
+        <div id="tf"></div>
+        <div class="badges" id="tfleg"></div>
+      </div>
+    </section>
+
     <section class="page" id="pg-analytics" hidden>
       <div class="section">
         <h2>Equipment Status Timeline — Shovels <span class="sub" id="tlsub"></span></h2>
@@ -3338,6 +3355,113 @@ function renderHaulCycles(){
   document.getElementById('hcleg').innerHTML=
     `<span class="badge"><b style="color:${CORE}">■</b> ore</span><span class="badge"><b style="color:${CWASTE}">■</b> waste</span><span class="badge">▨ hatched = locked (un-optimized) loads · % under each node</span><span class="badge">left: shovel + actual TPNOH (t/h) · right: dump + total tonnes · ribbon ∝ tonnage · km = actual/expected haul dist</span>`;
 }
+function drawTruckFlow(d){
+  // 3-column Sankey: Prev Dump (col A) → Shovel (col B) → Dump (col C)
+  const flows=d.fullFlows.filter(f=>f.tons>0).slice();
+  const pflows=(d.prevFlows||[]).filter(f=>f.tons>0).slice();
+  if(!flows.length)return '<div class="foot">No flow data.</div>';
+  const tpOf={};d.loadNodes.forEach(n=>tpOf[n.id]=n.tpnoh||0);
+  const dtOf={};d.dumpNodes.forEach(n=>dtOf[n.id]=n.tons||0);
+  // Build node sizes from fullFlows (shovel→dump, right side)
+  let colTot=Math.max(flows.reduce((s,f)=>s+f.tons,0),1);
+  const minTon=colTot*0.015;
+  const filt=flows.filter(f=>f.tons>=minTon);
+  const pfilt=pflows.filter(f=>f.tons>=minTon*0.4);
+  const srcF={},dstF={};
+  filt.forEach(f=>{srcF[f.from]=(srcF[f.from]||0)+f.tons;dstF[f.to]=(dstF[f.to]||0)+f.tons;});
+  const srcP={},dstP={};
+  pfilt.forEach(f=>{srcP[f.from]=(srcP[f.from]||0)+f.tons;dstP[f.to]=(dstP[f.to]||0)+f.tons;});
+  const shovels=Object.keys(srcF).sort((a,b)=>srcF[b]-srcF[a]);
+  const dumps=Object.keys(dstF).sort((a,b)=>dstF[b]-dstF[a]);
+  const prevDumps=Object.keys(srcP).sort((a,b)=>srcP[b]-srcP[a]);
+  if(!shovels.length)return '<div class="foot">No flow data.</div>';
+  // Layout constants (3-column, wider canvas)
+  const W=1200,pad=26,nodeW=13,gap=10;
+  const ax=200;   // col A prev-dump node x (labels 0–194 to the left)
+  const bx=530;   // col B shovel node x
+  const cx=W-230-nodeW;  // col C dump node x (=957, labels 970+ to the right)
+  colTot=Math.max(shovels.reduce((s,k)=>s+srcF[k],0),dumps.reduce((s,k)=>s+dstF[k],0),1);
+  const nShovGaps=Math.max(0,shovels.length-1);
+  const H=Math.max(400,32*Math.max(shovels.length,dumps.length,prevDumps.length)+70);
+  const sc=(H-2*pad-gap*nShovGaps)/colTot;
+  // Build node position objects
+  const posB={};let yB=pad;
+  shovels.forEach(k=>{const h=Math.max(4,srcF[k]*sc);posB[k]={x:bx,y:yB,h,off:0,poff:0};yB+=h+gap;});
+  const posC={};let yC=pad;
+  dumps.forEach(k=>{const h=Math.max(4,dstF[k]*sc);posC[k]={x:cx,y:yC,h,off:0};yC+=h+gap;});
+  const posA={};let yA=pad;
+  prevDumps.forEach(k=>{const h=Math.max(4,srcP[k]*sc);posA[k]={x:ax,y:yA,h,off:0};yA+=h+gap;});
+  const H_svg=Math.max(yA,yB,yC)+pad;
+  // Locked-load stats (right flows only)
+  const lLk={},lTt={},dLk={},dTt={};
+  filt.forEach(f=>{lTt[f.from]=(lTt[f.from]||0)+(f.n||0);lLk[f.from]=(lLk[f.from]||0)+(f.nlock||0);
+    dTt[f.to]=(dTt[f.to]||0)+(f.n||0);dLk[f.to]=(dLk[f.to]||0)+(f.nlock||0);});
+  const lpct=k=>lTt[k]?Math.round(lLk[k]/lTt[k]*100):0;
+  const dpct=k=>dTt[k]?Math.round(dLk[k]/dTt[k]*100):0;
+  // Sort flows for ribbon drawing order
+  const sli={},dli={},ali={};
+  shovels.forEach((k,i)=>sli[k]=i);dumps.forEach((k,i)=>dli[k]=i);prevDumps.forEach((k,i)=>ali[k]=i);
+  filt.sort((a,b)=>sli[a.from]-sli[b.from]||dli[a.to]-dli[b.to]);
+  pfilt.sort((a,b)=>ali[a.from]-ali[b.from]||sli[a.to]-sli[b.to]);
+  let ribR='',ribL='',dlabels='';
+  // Right ribbons: shovel → dump
+  filt.forEach(f=>{
+    const S=posB[f.from],T=posC[f.to];if(!S||!T)return;
+    const th=f.tons*sc,y1=S.y+S.off,y2=T.y+T.off;S.off+=th;T.off+=th;
+    const x1=S.x+nodeW,x2=T.x,xm=(x1+x2)/2,c=f.mat==='Waste'?CWASTE:CORE;
+    const lf=f.n?(f.nlock||0)/f.n:0;
+    ribR+=`<path d="M${x1} ${y1} C${xm} ${y1},${xm} ${y2},${x2} ${y2} L${x2} ${y2+th} C${xm} ${y2+th},${xm} ${y1+th},${x1} ${y1+th} Z" fill="${c}" fill-opacity="0.42"><title>${shortId(f.from)} → ${shortId(f.to)}: ${f.tons.toLocaleString()}t · ${f.km||0}/${f.kmE||0} km (actual/expected) · ${Math.round(lf*100)}% locked</title></path>`;
+    if(lf>0){const lth=th*lf;
+      ribR+=`<path d="M${x1} ${y1} C${xm} ${y1},${xm} ${y2},${x2} ${y2} L${x2} ${y2+lth} C${xm} ${y2+lth},${xm} ${y1+lth},${x1} ${y1+lth} Z" fill="url(#lockhatch)" pointer-events="none"/>`;}
+    if(th>=9&&f.km){const ky=y1+th/2+3;
+      dlabels+=`<text x="${x1+5}" y="${ky}" font-size="8.5" font-weight="600" fill="#2b2f36" stroke="#fff" stroke-width="2.4" paint-order="stroke" pointer-events="none">${f.km}/${f.kmE} km</text>`;}
+  });
+  // Left ribbons: prev-dump → shovel
+  pfilt.forEach(f=>{
+    const P=posA[f.from],S=posB[f.to];if(!P||!S)return;
+    const th=f.tons*sc,y1=P.y+P.off,y2=S.y+S.poff;P.off+=th;S.poff+=th;
+    const x1=P.x+nodeW,x2=S.x,xm=(x1+x2)/2,c=f.mat==='Waste'?CWASTE:CORE;
+    ribL+=`<path d="M${x1} ${y1} C${xm} ${y1},${xm} ${y2},${x2} ${y2} L${x2} ${y2+th} C${xm} ${y2+th},${xm} ${y1+th},${x1} ${y1+th} Z" fill="${c}" fill-opacity="0.30"><title>${shortId(f.from)} → ${shortId(f.to)}: ${f.tons.toLocaleString()}t (prev dump → shovel)</title></path>`;
+  });
+  // Column header labels
+  let nd=`<text x="${ax+nodeW/2}" y="${pad-12}" text-anchor="middle" font-size="9.5" font-weight="700" letter-spacing="0.8" fill="#8fa0b8">PREV DUMP</text>`;
+  nd+=`<text x="${bx+nodeW/2}" y="${pad-12}" text-anchor="middle" font-size="9.5" font-weight="700" letter-spacing="0.8" fill="var(--muted)">SHOVEL</text>`;
+  nd+=`<text x="${cx+nodeW/2}" y="${pad-12}" text-anchor="middle" font-size="9.5" font-weight="700" letter-spacing="0.8" fill="var(--muted)">DUMP</text>`;
+  // Col A: prev-dump nodes (far left) — label to the left, colour distinct from shovels
+  prevDumps.forEach(k=>{const p=posA[k];
+    const lbl=shortId(k)+'  ·  '+Math.round(srcP[k]).toLocaleString()+' t';
+    nd+=`<rect x="${p.x}" y="${p.y}" width="${nodeW}" height="${p.h}" rx="2" fill="#8fa0b8"/>`;
+    nd+=`<text x="${p.x-6}" y="${p.y+p.h/2+3.5}" text-anchor="end" font-size="10" fill="var(--ink)">${lbl}</text>`;
+  });
+  // Col B: shovel nodes (middle) — label to the left (same as existing drawSan style)
+  shovels.forEach(k=>{const p=posB[k];
+    const lbl=shortId(k)+(tpOf[k]?'  ·  '+tpOf[k].toLocaleString()+' t/h':'');
+    const lp=lpct(k);
+    nd+=`<rect x="${p.x}" y="${p.y}" width="${nodeW}" height="${p.h}" rx="2" fill="var(--muted)"/>`;
+    nd+=`<text x="${p.x-6}" y="${p.y+p.h/2}" text-anchor="end" font-size="10" fill="var(--ink)">${lbl}</text>`;
+    nd+=`<text x="${p.x-6}" y="${p.y+p.h/2+11}" text-anchor="end" font-size="8.5" fill="${lp>=25?'#b3382b':'var(--muted)'}">${lp}% locked</text>`;
+  });
+  // Col C: dump nodes (right) — label to the right
+  dumps.forEach(k=>{const p=posC[k];
+    const lbl=shortId(k)+'  ·  '+Math.round(dtOf[k]||dstF[k]).toLocaleString()+' t';
+    const lp=dpct(k);
+    nd+=`<rect x="${p.x}" y="${p.y}" width="${nodeW}" height="${p.h}" rx="2" fill="var(--muted)"/>`;
+    nd+=`<text x="${p.x+nodeW+6}" y="${p.y+p.h/2}" text-anchor="start" font-size="10" fill="var(--ink)">${lbl}</text>`;
+    nd+=`<text x="${p.x+nodeW+6}" y="${p.y+p.h/2+11}" text-anchor="start" font-size="8.5" fill="${lp>=25?'#b3382b':'var(--muted)'}">${lp}% locked</text>`;
+  });
+  const defs=`<defs><pattern id="lockhatch" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#233" stroke-width="1.5" stroke-opacity="0.6"/></pattern></defs>`;
+  return `<svg viewBox="0 0 ${W} ${H_svg}" width="100%">${defs}${ribL}${ribR}${dlabels}${nd}</svg>`;
+}
+function renderTruckFlow(){
+  const d=V().haulCycles;
+  document.getElementById('tfsub').textContent='('+view+')';
+  document.getElementById('tf').innerHTML=drawTruckFlow(d);
+  document.getElementById('tfleg').innerHTML=
+    `<span class="badge"><b style="color:${CORE}">■</b> ore</span>`+
+    `<span class="badge"><b style="color:${CWASTE}">■</b> waste</span>`+
+    `<span class="badge">▨ hatched = locked (un-optimized) loads · % under shovel/dump nodes</span>`+
+    `<span class="badge">left: prev dump + tonnes arriving · centre: shovel + TPNOH (t/h) · right: dump + total tonnes · ribbon ∝ tonnage · km = actual/expected haul dist</span>`;
+}
 const CHARTS={};
 let hourSel=null;   // selected hour in the Shift Overview hourly chart (index into hourlyPerf)
 function renderHourDetail(i){
@@ -3883,7 +4007,7 @@ function buildProdTable(d,k,emptyMsg){
   document.getElementById(P.body).innerHTML=s+'</table></div>';
 }
 function renderTruckProd(){ buildProdTable(V().truckProd,'tp','No truck productivity data for this view.'); }
-const TABS=[['overview','Shift Overview',0],['balance','Truck / Shovel Balance',0],['shovel2','Shovel Waterfall',0],['loading','Loading drill-down',1],['shovprod','Shovel Productivity',1],['trucks','Truck Waterfall',0],['haulage','Haulage drill-down',1],['delays','Delays & Standby',1],['truckprod','Truck Productivity',1],['hourlyperf','Hourly Production',0],['lube','Fuel and Lube',0],['shiftstats','Shift Stats',0],['trends','Cross-Shift Trends',0],['appendix','Appendix',0],['sandbox','Sandbox',0]];
+const TABS=[['overview','Shift Overview',0],['balance','Truck / Shovel Balance',0],['shovel2','Shovel Waterfall',0],['loading','Loading drill-down',1],['shovprod','Shovel Productivity',1],['trucks','Truck Waterfall',0],['haulage','Haulage drill-down',1],['truckflow','Truck Flow',1],['delays','Delays & Standby',1],['truckprod','Truck Productivity',1],['hourlyperf','Hourly Production',0],['lube','Fuel and Lube',0],['shiftstats','Shift Stats',0],['trends','Cross-Shift Trends',0],['appendix','Appendix',0],['sandbox','Sandbox',0]];
 let tab='overview';
 function renderSidenav(){const n=document.getElementById('sidenav');
   n.querySelectorAll('button').forEach(b=>b.remove());
@@ -3894,7 +4018,7 @@ function renderPageNav(){const idx=TABS.findIndex(t=>t[0]===tab);
   const pv=document.getElementById('pgPrev'),nx=document.getElementById('pgNext'),lb=document.getElementById('pgLabel');
   if(pv)pv.disabled=idx<=0; if(nx)nx.disabled=idx>=TABS.length-1;
   if(lb)lb.textContent=(idx+1)+' / '+TABS.length+' · '+(TABS[idx]?TABS[idx][1]:'');}
-function setSubs(){['wfsub','shovsub','hcsub','ansub','owsub','lanesub','dhsub','dlsub','tlsub','avsub','avsub2','dtlsub','lhsub','lusub','hitsub','shov2sub','dssub','hpsub','spsub','tpsub','sssub'].forEach(id=>{const e=document.getElementById(id);if(e)e.textContent='('+view+')';});}
+function setSubs(){['wfsub','shovsub','hcsub','ansub','owsub','lanesub','dhsub','dlsub','tlsub','avsub','avsub2','dtlsub','lhsub','lusub','hitsub','shov2sub','dssub','hpsub','spsub','tpsub','sssub','tfsub'].forEach(id=>{const e=document.getElementById(id);if(e)e.textContent='('+view+')';});}
 function renderTab(){
   setSubs(); renderPageNav();
   if(tab==='overview'){try{renderOverview();}catch(e){console.error(e);}}
@@ -3905,6 +4029,7 @@ function renderTab(){
   else if(tab==='shovel2'){renderShovWF2();}
   else if(tab==='loading'){renderLoading();}
   else if(tab==='haulage'){renderLanes();}
+  else if(tab==='truckflow'){try{renderTruckFlow();}catch(e){console.error(e);}}
   else if(tab==='lube'){try{renderLube();}catch(e){console.error(e);}}
   else if(tab==='delays'){try{renderDelays();}catch(e){console.error(e);}}
   else if(tab==='hourlyperf'){try{renderHourlyPerf();}catch(e){console.error(e);}}
