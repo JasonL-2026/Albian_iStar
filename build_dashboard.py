@@ -822,7 +822,7 @@ def build_shift(sm):
         lx=defaultdict(list);ly=defaultdict(list);dxx=defaultdict(list);dyy=defaultdict(list)
         ltons=defaultdict(lambda:defaultdict(float));dtons=defaultdict(float);ltp=defaultdict(lambda:[0.0,0.0])
         full=defaultdict(lambda:[0.0,0,defaultdict(int),0,0.0,0.0])   # tons, count, matcounts, lockedCount, Σ full-haul dist(m), Σ expected dist(m)
-        prev_full=defaultdict(lambda:[0.0,0,defaultdict(int)])          # (prevDump,shovel) → [tons, count, {mat:count}]
+        prev_full=defaultdict(lambda:[0.0,0,defaultdict(int),0])          # (prevDump,shovel) → [tons, count, {mat:count}, lockedCount]
         for r in rs:
             # left node = the actual shovel (Excav) so the placement axis always reads as a shovel and each
             # shovel's digs (bench + stockpile re-handle) aggregate into one node; fall back to LoadLocation if blank
@@ -830,15 +830,16 @@ def build_shift(sm):
             lx[L].append(num(r['FieldGpsxtkl']));ly[L].append(num(r['FieldGpsytkl']));ltons[L][m]+=t
             dxx[D].append(num(r['FieldGpsxtkd']));dyy[D].append(num(r['FieldGpsytkd']));dtons[D]+=t
             ltp[L][0]+=t; ltp[L][1]+=max(NOH_FLOOR_S,num(r['SpotTime'])+num(r['LoadingTime'])+num(r['HangTime']))/3600.0
+            # a "locked" load is not optimized by the system: FieldElock or FieldDlock holds a shovel/dump ID (not NONE)
+            lk=(r.get('FieldElock','NONE') not in ('','NONE')) or (r.get('FieldDlock','NONE') not in ('','NONE'))
             if L!=D:
-                # a "locked" load is not optimized by the system: FieldElock or FieldDlock holds a shovel/dump ID (not NONE)
-                lk=(r.get('FieldElock','NONE') not in ('','NONE')) or (r.get('FieldDlock','NONE') not in ('','NONE'))
                 f=full[(L,D)];f[0]+=t;f[1]+=1;f[2][m]+=1;f[4]+=num(r['FullHaulDistance']);f[5]+=num(r['FullExpectedDistance'])
                 if lk: f[3]+=1
             # prev-dump: where the truck was before arriving at this shovel (from PREV_DUMP global dict)
             pd=PREV_DUMP.get(id(r))
             if pd and pd!='?':
                 pf=prev_full[(pd,L)]; pf[0]+=t; pf[1]+=1; pf[2][m]+=1
+                if lk: pf[3]+=1
         allx=sorted(z for vs in list(lx.values())+list(dxx.values()) for z in vs if z>0)
         ally=sorted(z for vs in list(ly.values())+list(dyy.values()) for z in vs if z>0)
         def pc(a,p): return a[min(len(a)-1,int(len(a)*p))] if a else 0
@@ -855,7 +856,7 @@ def build_shift(sm):
         lset={n['id'] for n in loadN}; dset={n['id'] for n in dumpN}
         fF=[{'from':k[0],'to':k[1],'tons':round(v[0]),'mat':max(v[2],key=v[2].get),'n':v[1],'nlock':v[3],'km':round(v[4]/v[1]/1000,1) if v[1] else 0,'kmE':round(v[5]/v[1]/1000,1) if v[1] else 0} for k,v in full.items() if k[0] in lset and k[1] in dset]
         # prev-dump flows: (prevDump,shovel) pairs where shovel is a known load node (≥2 loads for signal)
-        prevF=[{'from':k[0],'to':k[1],'tons':round(v[0]),'mat':max(v[2],key=v[2].get),'n':v[1]}
+        prevF=[{'from':k[0],'to':k[1],'tons':round(v[0]),'mat':max(v[2],key=v[2].get),'n':v[1],'nlock':v[3]}
                for k,v in prev_full.items() if k[1] in lset and v[1]>=2]
         flowcache[pit]={'loadNodes':loadN,'dumpNodes':dumpN,'fullFlows':fF,'prevFlows':prevF}
     def agg_flows(pits):
@@ -3421,7 +3422,10 @@ function drawTruckFlow(d){
     const P=posA[f.from],S=posB[f.to];if(!P||!S)return;
     const th=f.tons*sc,y1=P.y+P.off,y2=S.y+S.poff;P.off+=th;S.poff+=th;
     const x1=P.x+nodeW,x2=S.x,xm=(x1+x2)/2,c=f.mat==='Waste'?CWASTE:CORE;
-    ribL+=`<path d="M${x1} ${y1} C${xm} ${y1},${xm} ${y2},${x2} ${y2} L${x2} ${y2+th} C${xm} ${y2+th},${xm} ${y1+th},${x1} ${y1+th} Z" fill="${c}" fill-opacity="0.30"><title>${shortId(f.from)} → ${shortId(f.to)}: ${f.tons.toLocaleString()}t (prev dump → shovel)</title></path>`;
+    const lf=f.n?(f.nlock||0)/f.n:0;
+    ribL+=`<path d="M${x1} ${y1} C${xm} ${y1},${xm} ${y2},${x2} ${y2} L${x2} ${y2+th} C${xm} ${y2+th},${xm} ${y1+th},${x1} ${y1+th} Z" fill="${c}" fill-opacity="0.30"><title>${shortId(f.from)} → ${shortId(f.to)}: ${f.tons.toLocaleString()}t (prev dump → shovel) · ${Math.round(lf*100)}% locked</title></path>`;
+    if(lf>0){const lth=th*lf;
+      ribL+=`<path d="M${x1} ${y1} C${xm} ${y1},${xm} ${y2},${x2} ${y2} L${x2} ${y2+lth} C${xm} ${y2+lth},${xm} ${y1+lth},${x1} ${y1+lth} Z" fill="url(#lockhatch)" pointer-events="none"/>`;}
   });
   // Column header labels
   let nd=`<text x="${ax+nodeW/2}" y="${pad-12}" text-anchor="middle" font-size="9.5" font-weight="700" letter-spacing="0.8" fill="#8fa0b8">PREV DUMP</text>`;
