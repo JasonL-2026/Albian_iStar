@@ -3710,8 +3710,8 @@ function renderOverview(){
   applyAvExpand();   // re-apply Expand all / Contract all state after a view/shift change
   // shovel placement Sankey (SVG, so it renders even without Chart.js)
   document.getElementById('hcsub2').textContent='('+view+')';
-  document.getElementById('hc2').innerHTML=drawSan(V().haulCycles);
-  document.getElementById('hcleg2').innerHTML=`<span class="badge"><b style="color:${CORE}">■</b> ore</span><span class="badge"><b style="color:${CWASTE}">■</b> waste</span><span class="badge">▨ hatched = locked (un-optimized) loads · % under each node</span><span class="badge">left: shovel + actual TPNOH (t/h) · right: dump + total tonnes · ribbon ∝ tonnage · km = actual/expected haul dist</span>`;
+  document.getElementById('hc2').innerHTML=drawTruckFlow(V().haulCycles);
+  document.getElementById('hcleg2').innerHTML=`<span class="badge"><b style="color:${CORE}">■</b> ore</span><span class="badge"><b style="color:${CWASTE}">■</b> waste</span><span class="badge">▨ hatched = locked (un-optimized) loads · % under shovel/dump nodes</span><span class="badge">left: prev dump + tonnes arriving · centre: shovel + TPNOH (t/h) · right: dump + total tonnes · ribbon ∝ tonnage · km = actual/expected haul dist</span>`;
   if(typeof Chart==='undefined'){document.getElementById('ovsub').textContent='('+view+') — charts need internet to load Chart.js';return;}
   const F10={font:{size:10}},F9={font:{size:9}};
   const hasProd=a.cumulative.actual.some(x=>x!=null&&x>0);
