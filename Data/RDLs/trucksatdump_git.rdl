@@ -151,7 +151,7 @@ ORDER BY ShiftId, DumpLocation, LogTime;
       <Prompt>Start Shift</Prompt>
       <DefaultValue>
           <Values>
-            <Value>=CInt(Format(DateSerial(Year(DateAdd("m",-1,Now())),Month(DateAdd("m",-1,Now())),1),"yyMMdd") & "001")</Value>
+            <Value>=CInt(Format(DateSerial(Year(DateAdd(&quot;m&quot;,-1,Now())),Month(DateAdd(&quot;m&quot;,-1,Now())),1),&quot;yyMMdd&quot;) &amp; &quot;001&quot;)</Value>
           </Values>
         </DefaultValue>
     </ReportParameter>
@@ -161,7 +161,7 @@ ORDER BY ShiftId, DumpLocation, LogTime;
       <Prompt>End Shift</Prompt>
       <DefaultValue>
           <Values>
-            <Value>=CInt(Format(DateSerial(Year(DateAdd("m",-1,Now())),Month(DateAdd("m",-1,Now()))+1,0),"yyMMdd") & "002")</Value>
+            <Value>=CInt(Format(DateSerial(Year(DateAdd(&quot;m&quot;,-1,Now())),Month(DateAdd(&quot;m&quot;,-1,Now()))+1,0),&quot;yyMMdd&quot;) &amp; &quot;002&quot;)</Value>
           </Values>
         </DefaultValue>
     </ReportParameter>
