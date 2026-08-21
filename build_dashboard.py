@@ -4194,7 +4194,6 @@ function collectRecommendations(){
   return recs;
 }
 function renderRecommendations(){
-  const recs=collectRecommendations();
   const el=document.getElementById('recBody');
   const meta={1:{label:'High priority',color:'#b3382b'},2:{label:'Medium priority',color:'#b3760f'},3:{label:'Low priority',color:'#2f7a44'}};
 
@@ -4249,59 +4248,11 @@ function renderRecommendations(){
   }
   h+=`<hr style="margin:18px 0 14px;border:none;border-top:1px solid #dde1e8">`;
 
-  // ---- Section 1: KPI Misses (existing JS-computed rows) ----
-  if(!recs.length){
-    h+='<div class="foot">All tracked KPI measures are at or above baseline for this shift/view.</div>';
-  } else {
-    h+=`<h3 style="margin:0 0 6px;font-size:15px;color:#344">KPI Misses</h3>`;
-    h+=`<div class="badges">`+[1,2,3].map(k=>`<span class="badge"><b style="color:${meta[k].color}">${meta[k].label}</b> ${recs.filter(r=>r.priority===k).length}</span>`).join('')+`</div>`;
-    [1,2,3].forEach(k=>{
-      const rows=recs.filter(r=>r.priority===k);
-      if(!rows.length)return;
-      h+=`<h4 class="mini">${meta[k].label}</h4><table class="lanetab"><tr><th>Area</th><th>Measure</th><th>Actual</th><th>Baseline</th><th>Gap</th><th></th></tr>`;
-      rows.forEach(r=>{
-        h+=`<tr><td>${r.area}</td><td>${r.measure}</td><td>${r.actual}</td><td>${r.baseline}</td><td style="color:${meta[k].color};font-weight:700">${r.gap}</td><td><button class="tlbtn" onclick="setTab('${r.tab}')">Open</button></td></tr>`;
-      });
-      h+='</table>';
-    });
-  }
-
-  // ---- Section 2: Cycle & Balance Priorities (Python-computed shiftRecs) ----
-  const sr=(V()&&V().shiftRecs)||[];
-  h+=`<hr style="margin:18px 0 14px;border:none;border-top:1px solid #dde1e8">`;
-  h+=`<h3 style="margin:0 0 4px;font-size:15px;color:#344">Cycle &amp; Balance Priorities</h3>`;
-  h+=`<p style="margin:0 0 10px;font-size:12px;color:var(--muted)">Ranked by estimated tonnes at risk this shift. Each gap = actual cycle component vs budget. Computed from raw load data.</p>`;
-  if(!sr.length){
-    h+='<div class="foot">All cycle components are within budget for this shift/view.</div>';
-  } else {
-    h+=`<div class="badges">`+[1,2,3].map(k=>`<span class="badge"><b style="color:${meta[k].color}">${meta[k].label}</b> ${sr.filter(r=>r.priority===k).length}</span>`).join('')+`</div>`;
-    [1,2,3].forEach(k=>{
-      const rows=sr.filter(r=>r.priority===k);
-      if(!rows.length)return;
-      h+=`<h4 class="mini">${meta[k].label}</h4>`;
-      h+=`<table class="lanetab"><tr><th>Area</th><th>Measure</th><th>Actual</th><th>Baseline</th><th>Gap</th><th style="text-align:right">Est. t at Risk</th><th></th></tr>`;
-      rows.forEach(r=>{
-        const tCol=meta[k].color;
-        const detail=r.detail?`<br><span style="font-size:11px;color:var(--muted)">${r.detail}</span>`:'';
-        h+=`<tr>
-          <td>${r.area}</td>
-          <td>${r.measure}${detail}</td>
-          <td style="white-space:nowrap">${r.actual_label}</td>
-          <td style="white-space:nowrap">${r.baseline_label}</td>
-          <td style="color:${tCol};font-weight:700;white-space:nowrap">${r.gap_label}</td>
-          <td style="text-align:right;font-weight:600;color:${tCol}">${(r.tonnes_at_risk||0).toLocaleString()} t</td>
-          <td><button class="tlbtn" onclick="setTab('${r.tab}')">Open</button></td>
-        </tr>`;
-      });
-      h+='</table>';
-    });
-  }
-
-  // ---- Section 3: Productivity Waterfall Summary ----
+  // ---- Section 1: Productivity Waterfall Summary ----
   const twf=V()&&V().trucksWF, swf=V()&&V().shovelWF2;
   h+=`<hr style="margin:18px 0 14px;border:none;border-top:1px solid #dde1e8">`;
   h+=`<h3 style="margin:0 0 4px;font-size:15px;color:#344">Productivity Waterfall Summary</h3>`;
-  h+=`<p style="margin:0 0 12px;font-size:12px;color:var(--muted)">Combined bridge from Scheduled Potential to Actual across both Trucks and Shovels. All KPI drivers are ranked by absolute tonnage impact — <span style="color:#2f7a44;font-weight:600">green&nbsp;= gain</span>, <span style="color:#b3382b;font-weight:600">red&nbsp;= loss</span>. Potential is the higher (unconstrained) fleet potential; a Residual row closes any accounting gap. Click <b>Open</b> to drill into the source tab.</p>`;
+  h+=`<p style="margin:0 0 12px;font-size:12px;color:var(--muted)">Combined bridge from Scheduled Potential to Actual across both Trucks and Shovels for the active <b>${view}</b> toggle selection. All KPI drivers are ranked by absolute tonnage impact — <span style="color:#2f7a44;font-weight:600">green&nbsp;= gain</span>, <span style="color:#b3382b;font-weight:600">red&nbsp;= loss</span>. Potential is the higher (unconstrained) fleet potential; a Residual row closes any accounting gap. Click <b>Open</b> to drill into the source tab.</p>`;
   if(!twf&&!swf){
     h+='<div class="foot">No waterfall data available for this view.</div>';
   } else {
