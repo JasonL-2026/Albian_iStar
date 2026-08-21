@@ -3251,17 +3251,17 @@ function waterfallSVG(o){
   const raw=(hi-lo)/5,mag=Math.pow(10,Math.floor(Math.log10(raw))),nn=raw/mag,step=(nn<1.5?1:nn<3?2:nn<7?5:10)*mag;
   for(let v=Math.ceil(lo/step)*step;v<=hi;v+=step){const x=X(v);
     g+=`<line x1="${x}" y1="${top}" x2="${x}" y2="${plotBot}" stroke="${GL}" stroke-width="1.2"/>`;
-    g+=`<text x="${x}" y="${plotBot+14}" text-anchor="middle" font-size="9" fill="var(--muted)">${fmt(Math.round(v))}</text>`;}
+    g+=`<text x="${x}" y="${plotBot+14}" text-anchor="middle" font-size="6.3" fill="var(--muted)">${fmt(Math.round(v))}</text>`;}
   // horizontal row separators
   for(let i=0;i<=n;i++){const y=top+i*rowH;g+=`<line x1="0" y1="${y}" x2="${W}" y2="${y}" stroke="${GL}" stroke-width="1"/>`;}
   // header bar (same colour as the gridlines)
   g+=`<rect x="0" y="0" width="${W}" height="${hdrH}" fill="${GL}"/>`;
   const hy=hdrH/2+4;
-  g+=`<text x="${xKPI}" y="${hy}" text-anchor="end" font-size="11" font-weight="700" fill="#33373e">KPI</text>`;
-  g+=`<text x="${xUOM}" y="${hy}" text-anchor="middle" font-size="11" font-weight="700" fill="#33373e">UOM</text>`;
-  g+=`<text x="${xTgt}" y="${hy}" text-anchor="end" font-size="11" font-weight="700" fill="#33373e">Target</text>`;
-  g+=`<text x="${xAct}" y="${hy}" text-anchor="end" font-size="11" font-weight="700" fill="#33373e">Actual</text>`;
-  if(o.title) g+=`<text x="${(LX+RX)/2}" y="${hy}" text-anchor="middle" font-size="11.5" font-weight="700" fill="#33373e">${o.title}</text>`;
+  g+=`<text x="${xKPI}" y="${hy}" text-anchor="end" font-size="7.7" font-weight="700" fill="#33373e">KPI</text>`;
+  g+=`<text x="${xUOM}" y="${hy}" text-anchor="middle" font-size="7.7" font-weight="700" fill="#33373e">UOM</text>`;
+  g+=`<text x="${xTgt}" y="${hy}" text-anchor="end" font-size="7.7" font-weight="700" fill="#33373e">Target</text>`;
+  g+=`<text x="${xAct}" y="${hy}" text-anchor="end" font-size="7.7" font-weight="700" fill="#33373e">Actual</text>`;
+  if(o.title) g+=`<text x="${(LX+RX)/2}" y="${hy}" text-anchor="middle" font-size="8.05" font-weight="700" fill="#33373e">${o.title}</text>`;
   // connectors
   for(let i=0;i<items.length-1;i++){const x=X(items[i].end);
     g+=`<line x1="${x}" y1="${rowY(i)+rowH/2}" x2="${x}" y2="${rowY(i+1)+rowH/2}" stroke="#8a92a0" stroke-width="1" stroke-dasharray="3 3" opacity="0.7"/>`;}
@@ -3273,21 +3273,21 @@ function waterfallSVG(o){
         +`<rect x="${bx}" y="${byy}" width="21" height="13" rx="2.5" fill="#eef0f7" stroke="#41419e" stroke-width="0.7"/>`
         +`<rect x="${bx+4}" y="${byy+6}" width="2.3" height="4" fill="#41419e"/><rect x="${bx+8}" y="${byy+4}" width="2.3" height="6" fill="#41419e"/><rect x="${bx+12}" y="${byy+7}" width="2.3" height="3" fill="#41419e"/>`
         +`</g>`;}
-    g+=`<text x="${xKPI}" y="${cy}" text-anchor="end" font-size="12" font-weight="700" fill="${it.kind==='anchor'?'#2b2f36':it.color}">${it.label}</text>`;
+    g+=`<text x="${xKPI}" y="${cy}" text-anchor="end" font-size="8.4" font-weight="700" fill="${it.kind==='anchor'?'#2b2f36':it.color}">${it.label}</text>`;
     if(it.kind==='step'&&it.col){const c=it.col;
-      g+=`<text x="${xUOM}" y="${cy}" text-anchor="middle" font-size="10.5" fill="#6b7280">${c.uom}</text>`;
-      g+=`<text x="${xTgt}" y="${cy}" text-anchor="end" font-size="10.5" font-weight="700" fill="#2b2f36">${c.tgt}</text>`;
-      g+=`<text x="${xAct}" y="${cy}" text-anchor="end" font-size="10.5" font-weight="700" fill="${it.color}">${c.act}</text>`;}
+      g+=`<text x="${xUOM}" y="${cy}" text-anchor="middle" font-size="7.35" fill="#6b7280">${c.uom}</text>`;
+      g+=`<text x="${xTgt}" y="${cy}" text-anchor="end" font-size="7.35" font-weight="700" fill="#2b2f36">${c.tgt}</text>`;
+      g+=`<text x="${xAct}" y="${cy}" text-anchor="end" font-size="7.35" font-weight="700" fill="${it.color}">${c.act}</text>`;}
     g+=`<rect x="${x1}" y="${by}" width="${w}" height="${barH}" fill="${it.color}" fill-opacity="${it.kind==='anchor'?1:0.92}"/>`;
-    if(it.kind==='anchor') g+=`<text x="${(x1+x2)/2}" y="${cy}" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">${fmt(it.val)}</text>`;
-    else g+=`<text x="${it.delta>=0?x2+4:x1-4}" y="${cy}" text-anchor="${it.delta>=0?'start':'end'}" font-size="10.5" font-weight="700" fill="${it.color}">${(it.delta>=0?'+':'−')+fmt(Math.abs(it.delta))}</text>`;
+    if(it.kind==='anchor') g+=`<text x="${(x1+x2)/2}" y="${cy}" text-anchor="middle" font-size="7.7" font-weight="700" fill="#fff">${fmt(it.val)}</text>`;
+    else g+=`<text x="${it.delta>=0?x2+4:x1-4}" y="${cy}" text-anchor="${it.delta>=0?'start':'end'}" font-size="7.35" font-weight="700" fill="${it.color}">${(it.delta>=0?'+':'−')+fmt(Math.abs(it.delta))}</text>`;
     if(it.segs&&it.segs.length&&it.delta<0){const tot=it.segs.reduce((s,r)=>s+r[1],0)||1;
       let cx=x1;
       it.segs.forEach((r,si)=>{const sw=w*r[1]/tot;
         if(si<it.segs.length-1) g+=`<line x1="${cx+sw}" y1="${by}" x2="${cx+sw}" y2="${by+barH}" stroke="#fff" stroke-width="0.8" opacity="0.85"/>`;
         const maxc=Math.floor((sw-4)/5.0);
         if(maxc>=5){const t=r[0].length>maxc?r[0].slice(0,maxc-1)+'…':r[0];
-          g+=`<text x="${cx+3}" y="${cy-0.5}" font-size="8.2" font-weight="600" fill="#fff">${t}<title>${r[0]} · ${r[1]}h</title></text>`;}
+          g+=`<text x="${cx+3}" y="${cy-0.5}" font-size="5.74" font-weight="600" fill="#fff">${t}<title>${r[0]} · ${r[1]}h</title></text>`;}
         cx+=sw;});}});
   return `<svg viewBox="0 0 ${W} ${H}" width="100%">${g}</svg>`;
 }
@@ -4254,12 +4254,12 @@ function renderRecommendations(){
   const wfps=(V()&&V().wfPrioritySummary)||null;
   const wfpData=wfps?(wfps[wfPrioMode]||wfps['perShift']):null;
   const gSign=n=>(n>=0?'+':'')+Math.round(n).toLocaleString();
-  let h='<h3 style="margin:0 0 6px;font-size:15px;color:#344">Waterfall Priority Gaps</h3>';
-  h+=`<p style="margin:0 0 10px;font-size:12px;color:var(--muted)">Waterfall components with |gap| &gt; 7,500 t vs. Potential, ranked by absolute tonnage loss. Threshold: <b>High</b> &gt;50k t · <b>Medium</b> 15k–50k t · <b>Low</b> 7.5k–15k t. Gains shown separately below.</p>`;
+  let h='<h3 style="margin:0 0 6px;font-size:20.25px;color:#344">Waterfall Priority Gaps</h3>';
+  h+=`<p style="margin:0 0 10px;font-size:16.2px;color:var(--muted)">Waterfall components with |gap| &gt; 7,500 t vs. Potential, ranked by absolute tonnage loss. Threshold: <b>High</b> &gt;50k t · <b>Medium</b> 15k–50k t · <b>Low</b> 7.5k–15k t. Gains shown separately below.</p>`;
   h+=`<div style="margin-bottom:10px">`+['perShift','last14'].map(m=>{
     const lbl=m==='perShift'?'This Shift':'Last 14 Shifts';
     const on=wfPrioMode===m;
-    return `<button onclick="wfPrioMode='${m}';renderRecommendations()" style="margin-right:6px;padding:4px 12px;border-radius:4px;border:1px solid ${on?'#3f51b5':'#ccd'};background:${on?'#3f51b5':'#f5f7fa'};color:${on?'#fff':'#445'};font-weight:${on?'600':'400'};cursor:pointer;font-size:12px">${lbl}</button>`;
+    return `<button onclick="wfPrioMode='${m}';renderRecommendations()" style="margin-right:6px;padding:4px 12px;border-radius:4px;border:1px solid ${on?'#3f51b5':'#ccd'};background:${on?'#3f51b5':'#f5f7fa'};color:${on?'#fff':'#445'};font-weight:${on?'600':'400'};cursor:pointer;font-size:16.2px">${lbl}</button>`;
   }).join('')+`</div>`;
   if(!wfpData||(!wfpData.losses.length&&!wfpData.gains.length)){
     h+='<div class="foot">No waterfall components exceed the 7,500 t threshold for this view/period.</div>';
@@ -4267,37 +4267,37 @@ function renderRecommendations(){
     const scLabel=wfPrioMode==='last14'?`Last ${wfpData.shiftCount} shifts`:'This shift';
     if(wfpData.losses.length){
       const losBadges=[1,2,3].map(k=>{const n=wfpData.losses.filter(r=>r.priority===k).length; return n?`<span class="badge"><b style="color:${meta[k].color}">${meta[k].label}</b> ${n}</span>`:''}).join('');
-      h+=`<h4 class="mini">Losses — below Potential</h4>${losBadges}`;
+      h+=`<h4 class="mini" style="font-size:16.2px">Losses — below Potential</h4>${losBadges}`;
       h+=`<table class="lanetab"><tr><th>#</th><th>Component</th><th style="text-align:right">&Delta; Tonnes</th><th>Priority</th><th>Supporting KPIs</th><th></th></tr>`;
       wfpData.losses.forEach((r,i)=>{
         const m=meta[r.priority]||{label:'—',color:'#888'};
         h+=`<tr>
-          <td style="color:#888;font-size:13px">${i+1}</td>
-          <td style="font-weight:600;font-size:13px">${r.component}</td>
-          <td style="text-align:right;font-weight:700;color:${m.color};white-space:nowrap;font-size:13px">${gSign(r.delta_t)} t</td>
-          <td><span class="badge" style="color:${m.color};background:${m.color}18;font-size:13px;white-space:nowrap">${m.label}</span></td>
-          <td style="font-size:13px;color:var(--muted)">${r.kpis}</td>
+          <td style="color:#888;font-size:17.55px">${i+1}</td>
+          <td style="font-weight:600;font-size:17.55px">${r.component}</td>
+          <td style="text-align:right;font-weight:700;color:${m.color};white-space:nowrap;font-size:17.55px">${gSign(r.delta_t)} t</td>
+          <td><span class="badge" style="color:${m.color};background:${m.color}18;font-size:17.55px;white-space:nowrap">${m.label}</span></td>
+          <td style="font-size:17.55px;color:var(--muted)">${r.kpis}</td>
           <td><button class="tlbtn" onclick="setTab('${r.tab}')">Open</button></td>
         </tr>`;
       });
       h+='</table>';
     }
     if(wfpData.gains.length){
-      h+=`<h4 class="mini" style="margin-top:12px;color:#2f7a44">Above Budget — gains vs. Potential</h4>`;
+      h+=`<h4 class="mini" style="margin-top:12px;color:#2f7a44;font-size:16.2px">Above Budget — gains vs. Potential</h4>`;
       h+=`<table class="lanetab"><tr><th>#</th><th>Component</th><th style="text-align:right">&Delta; Tonnes</th><th></th><th>Supporting KPIs</th><th></th></tr>`;
       wfpData.gains.forEach((r,i)=>{
         h+=`<tr>
-          <td style="color:#888;font-size:11px">${i+1}</td>
-          <td style="font-weight:600">${r.component}</td>
-          <td style="text-align:right;font-weight:700;color:#2f7a44;white-space:nowrap">${gSign(r.delta_t)} t</td>
+          <td style="color:#888;font-size:14.85px">${i+1}</td>
+          <td style="font-weight:600;font-size:14.85px">${r.component}</td>
+          <td style="text-align:right;font-weight:700;color:#2f7a44;white-space:nowrap;font-size:14.85px">${gSign(r.delta_t)} t</td>
           <td></td>
-          <td style="font-size:11px;color:var(--muted)">${r.kpis}</td>
+          <td style="font-size:14.85px;color:var(--muted)">${r.kpis}</td>
           <td><button class="tlbtn" onclick="setTab('${r.tab}')">Open</button></td>
         </tr>`;
       });
       h+='</table>';
     }
-    h+=`<div class="foot" style="margin-top:8px">Potential: <b>${wfpData.potential.toLocaleString()}</b> t &rarr; Actual: <b>${wfpData.actual.toLocaleString()}</b> t &nbsp;·&nbsp; Net gap: <b>${gSign(wfpData.actual-wfpData.potential)}</b> t &nbsp;·&nbsp; ${scLabel}</div>`;
+    h+=`<div class="foot" style="margin-top:8px;font-size:14.85px">Potential: <b>${wfpData.potential.toLocaleString()}</b> t &rarr; Actual: <b>${wfpData.actual.toLocaleString()}</b> t &nbsp;·&nbsp; Net gap: <b>${gSign(wfpData.actual-wfpData.potential)}</b> t &nbsp;·&nbsp; ${scLabel}</div>`;
   }
   h+=`<hr style="margin:18px 0 14px;border:none;border-top:1px solid #dde1e8">`;
 
