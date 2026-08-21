@@ -3528,6 +3528,91 @@ function buildWFImpactTable(wfType,wf){
   s+='</table>';
   return s;
 }
+// Combined shovel + truck productivity waterfall — single bridge chart ranked by absolute KPI impact.
+// start = higher (unconstrained) potential; end = actual; residual closes any accounting gap.
+function buildCombinedProductivityWF(twf,swf){
+  const tPot=twf?(twf.schedPotential||twf.potential):0;
+  const sPot=swf?(swf.schedPotential||swf.potential):0;
+  const potential=Math.max(tPot,sPot);
+  const actual=twf?twf.actual:(swf?swf.actual:0);
+  const rows=[];
+  const pushRows=(wf,prefix)=>{
+    if(!wf)return;
+    const av=wf.availDecomp;
+    if(av){
+      rows.push({label:prefix+' · PA',delta:av.pa.t,col:{uom:'%',tgt:av.pa.bud.toFixed(1),act:av.pa.act.toFixed(1)}});
+      rows.push({label:prefix+' · UA',delta:av.ua.t,col:{uom:'%',tgt:av.ua.bud.toFixed(1),act:av.ua.act.toFixed(1)}});
+      rows.push({label:prefix+' · OE',delta:av.oe.t,col:{uom:'%',tgt:av.oe.bud.toFixed(1),act:av.oe.act.toFixed(1)}});
+    }
+    const meta=prefix==='Trucks'
+      ?[['Payload','Payload'],['Load','Load Time'],['Queue','Queue at Shovel'],['Spot','Spot at Shovel'],
+        ['DumpIdle','Dump Idle'],['Dumping','Dumping'],['FullHaul','Full Haul'],['EmptyHaul','Empty Haul']]
+      :[['Payload','Payload'],['Spot','Spot at Shovel'],['Load','Load Time'],['Hang','Hang Time']];
+    meta.forEach(([k,lbl])=>{
+      const d=wf.rows[k]; if(d==null)return;
+      const lm=wf.lm&&wf.lm[k];
+      let col=null;
+      if(lm){if(lm.unit==='t')col={uom:'wTons',tgt:lm.target.toFixed(0),act:lm.actual.toFixed(0)};
+             else col={uom:'mm:ss',tgt:fmtTime(lm.target),act:fmtTime(lm.actual)};}
+      rows.push({label:prefix+' · '+lbl,delta:d,col});
+    });
+  };
+  pushRows(twf,'Trucks');
+  pushRows(swf,'Shovels');
+  rows.sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta));
+  const sumD=rows.reduce((s,r)=>s+r.delta,0);
+  const residual=actual-potential-sumD;
+  if(Math.abs(residual)>0.5)rows.push({label:'Residual',delta:residual});
+  return waterfallSVG({startLabel:'Potential',startVal:potential,endLabel:'Actual',endVal:actual,rows});
+}
+// Combined ranked KPI impact table for both fleets — sorted by absolute tonnage impact.
+function buildCombinedWFImpactTable(twf,swf){
+  const potential=Math.max(twf?(twf.schedPotential||twf.potential):0,swf?(swf.schedPotential||swf.potential):0);
+  const actual=twf?twf.actual:(swf?swf.actual:0);
+  const gap=actual-potential;
+  const absgap=Math.abs(gap)||1;
+  const drivers=[];
+  const pushDrivers=(wf,prefix,avTab,rowTab)=>{
+    if(!wf)return;
+    const av=wf.availDecomp;
+    if(av){
+      drivers.push({label:prefix+' · PA (Availability)',delta:av.pa.t,act:av.pa.act.toFixed(1)+'%',bud:av.pa.bud.toFixed(1)+'%',tab:avTab});
+      drivers.push({label:prefix+' · UA (Standby)',    delta:av.ua.t,act:av.ua.act.toFixed(1)+'%',bud:av.ua.bud.toFixed(1)+'%',tab:avTab});
+      drivers.push({label:prefix+' · OE (Delay)',      delta:av.oe.t,act:av.oe.act.toFixed(1)+'%',bud:av.oe.bud.toFixed(1)+'%',tab:avTab});
+    }
+    const meta=prefix==='Trucks'
+      ?[['Payload','Payload','trucks'],['Load','Load Time','loading'],['Queue','Queue at Shovel','trucks'],
+        ['Spot','Spot at Shovel','loading'],['DumpIdle','Dump Idle','trucks'],['Dumping','Dumping','trucks'],
+        ['FullHaul','Full Haul','haulage'],['EmptyHaul','Empty Haul','haulage']]
+      :[['Payload','Payload','shovel2'],['Spot','Spot at Shovel','shovel2'],
+        ['Load','Load Time','shovel2'],['Hang','Hang Time','shovel2']];
+    meta.forEach(([k,lbl,tab])=>{
+      const d=wf.rows[k]; if(d==null)return;
+      const lm=wf.lm&&wf.lm[k]; let act='—',bud='—';
+      if(lm){if(lm.unit==='t'){act=fmt(lm.actual)+' t';bud=fmt(lm.target)+' t';}
+             else{act=fmtTime(lm.actual);bud=fmtTime(lm.target);}}
+      drivers.push({label:prefix+' · '+lbl,delta:d,act,bud,tab});
+    });
+  };
+  pushDrivers(twf,'Trucks','trucks','trucks');
+  pushDrivers(swf,'Shovels','shovel2','shovel2');
+  if(!drivers.length)return '<div class="foot">No driver data.</div>';
+  drivers.sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta));
+  let s=`<table class="lanetab" style="margin-top:6px"><tr><th>Driver</th><th>Budget</th><th>Actual KPI</th>`
+      +`<th style="text-align:right">&#916; Tonnes</th><th style="text-align:right">% of Gap</th><th></th></tr>`;
+  drivers.forEach(d=>{
+    if(d.delta===0)return;
+    const col=d.delta<0?'#b3382b':'#2f7a44';
+    const pct=(Math.abs(d.delta)/absgap*100).toFixed(1);
+    const sign=d.delta>=0?'+':'−';
+    s+=`<tr><td>${d.label}</td><td style="color:var(--muted)">${d.bud}</td><td>${d.act}</td>`
+      +`<td style="text-align:right;font-weight:700;color:${col}">${sign}${fmt(Math.abs(d.delta))} t</td>`
+      +`<td style="text-align:right;color:${col}">${pct}%</td>`
+      +`<td><button class="tlbtn" onclick="setTab('${d.tab}')">Open</button></td></tr>`;
+  });
+  s+='</table>';
+  return s;
+}
 function renderShovWF2(){
   const wf=V().shovelWF2;
   if(!wf){document.getElementById('shovwf2').innerHTML='<div class="foot">No shovel cycle data for this view.</div>';document.getElementById('shov2ind').innerHTML='';document.getElementById('shovOW2').innerHTML='';return;}
@@ -4107,22 +4192,18 @@ function renderRecommendations(){
   const twf=V()&&V().trucksWF, swf=V()&&V().shovelWF2;
   h+=`<hr style="margin:18px 0 14px;border:none;border-top:1px solid #dde1e8">`;
   h+=`<h3 style="margin:0 0 4px;font-size:15px;color:#344">Productivity Waterfall Summary</h3>`;
-  h+=`<p style="margin:0 0 12px;font-size:12px;color:var(--muted)">Full bridge from Scheduled Potential to Actual for Trucks and Shovels. Each row shows the KPI driver, its budget vs actual value, and the resulting tonnage impact. Drivers are ranked by absolute impact — <span style="color:#2f7a44;font-weight:600">green&nbsp;= gain</span>, <span style="color:#b3382b;font-weight:600">red&nbsp;= loss</span>. Click <b>Open</b> to drill into the source tab.</p>`;
+  h+=`<p style="margin:0 0 12px;font-size:12px;color:var(--muted)">Combined bridge from Scheduled Potential to Actual across both Trucks and Shovels. All KPI drivers are ranked by absolute tonnage impact — <span style="color:#2f7a44;font-weight:600">green&nbsp;= gain</span>, <span style="color:#b3382b;font-weight:600">red&nbsp;= loss</span>. Potential is the higher (unconstrained) fleet potential; a Residual row closes any accounting gap. Click <b>Open</b> to drill into the source tab.</p>`;
   if(!twf&&!swf){
     h+='<div class="foot">No waterfall data available for this view.</div>';
   } else {
-    if(twf){
-      const gapT=twf.actual-twf.potential, gSign=gapT>=0?'+':'';
-      h+=`<h4 class="mini" style="margin-top:4px">Trucks &mdash; Scheduled Potential&nbsp;${fmt(twf.potential)}&nbsp;t &rarr; Actual&nbsp;${fmt(twf.actual)}&nbsp;t (gap&nbsp;${gSign}${fmt(gapT)}&nbsp;t)</h4>`;
-      h+=buildWF(twf);
-      h+=buildWFImpactTable('trucks',twf);
-    }
-    if(swf){
-      const gapS=swf.actual-swf.potential, gSignS=gapS>=0?'+':'';
-      h+=`<h4 class="mini" style="margin-top:18px">Shovels &mdash; Scheduled Potential&nbsp;${fmt(swf.potential)}&nbsp;t &rarr; Actual&nbsp;${fmt(swf.actual)}&nbsp;t (gap&nbsp;${gSignS}${fmt(gapS)}&nbsp;t)</h4>`;
-      h+=buildShovWF2(swf);
-      h+=buildWFImpactTable('shovel',swf);
-    }
+    const tPot=twf?(twf.schedPotential||twf.potential):0;
+    const sPot=swf?(swf.schedPotential||swf.potential):0;
+    const combPot=Math.max(tPot,sPot);
+    const combAct=twf?twf.actual:(swf?swf.actual:0);
+    const combGap=combAct-combPot, gSign=combGap>=0?'+':'';
+    h+=`<h4 class="mini" style="margin-top:4px">Trucks &amp; Shovels &mdash; Scheduled Potential&nbsp;${fmt(combPot)}&nbsp;t &rarr; Actual&nbsp;${fmt(combAct)}&nbsp;t (gap&nbsp;${gSign}${fmt(combGap)}&nbsp;t)</h4>`;
+    h+=buildCombinedProductivityWF(twf,swf);
+    h+=buildCombinedWFImpactTable(twf,swf);
   }
 
   el.innerHTML=h;
