@@ -892,12 +892,9 @@ def build_shift(sm):
             o=sum(v for k,v in d[limit:])
             if o>0.3: out.append(['Other',round(o,1)])
             return out
-        return {'pa':{'t':round(pa_t),'act':round(PAa,1),'bud':round(PAb,1),'reasons':reasons_of('Down'),
-                      'num':AR+ADe+AS,'den':TH,'budNum':PAbw,'budDen':wsum},
-                'ua':{'t':round(ua_t),'act':round(UAa,1),'bud':round(UAb,1),'reasons':reasons_of('Standby'),
-                      'num':AR+ADe,'den':AR+ADe+AS,'budNum':UAbw,'budDen':wsum},
-                'oe':{'t':round(oe_t),'act':round(OEa,1),'bud':round(OEb,1),'reasons':reasons_of('Delay'),
-                      'num':AR,'den':AR+ADe,'budNum':OEbw,'budDen':wsum}}
+        return {'pa':{'t':round(pa_t),'act':round(PAa*100,1),'bud':round(PAb*100,1),'reasons':rsn('Down')},
+                'ua':{'t':round(ua_t),'act':round(UAa*100,1),'bud':round(UAb*100,1),'reasons':rsn('Standby')},
+                'oe':{'t':round(oe_t),'act':round(OEa*100,1),'bud':round(OEb*100,1),'reasons':rsn('Delay')}}
     def agg_shov2(pits):
         seg=shovel_seg_decomp(pits)
         if not seg: return None
