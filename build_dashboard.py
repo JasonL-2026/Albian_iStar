@@ -2100,6 +2100,14 @@ body.sb-auto .pagenav{display:flex}
       </div>
     </section>
 
+    <section class="page" id="pg-recommendations" hidden>
+      <div class="section">
+        <h2>Recommendations <span class="sub" id="recsub"></span></h2>
+        <div id="recBody"></div>
+        <div class="foot">Only measures below baseline are listed. Priority is driven by the size of the miss, and each row links to the source tab for drill-down.</div>
+      </div>
+    </section>
+
     <section class="page" id="pg-matplace" hidden>
       <div class="section">
         <h2>Material Placement <span class="sub" id="hcsub2"></span></h2>
@@ -3763,6 +3771,107 @@ function factorsFor(which){
     if(val<0&&(!con||val<con.val))con={label:FLBL[k]||k,val};}
   return {pro,con};
 }
+function recFmtVal(fmtKey,v){
+  if(v==null||!isFinite(v))return '—';
+  if(fmtKey==='pct'||fmtKey==='pct1')return v.toFixed(1)+'%';
+  if(fmtKey==='pts')return (v>0?'+':'')+v.toFixed(1)+' pts';
+  if(fmtKey==='hours')return v.toFixed(1)+' h';
+  if(fmtKey==='mmss'||fmtKey==='mmss_')return fmtTime(v);
+  if(fmtKey==='ratio')return v.toFixed(3);
+  if(fmtKey==='rate')return fmt(v)+' t/h';
+  if(fmtKey==='tons')return fmt(v)+' t';
+  return String(v);
+}
+function recGapVal(fmtKey,delta){
+  if(delta==null||!isFinite(delta))return '—';
+  const s=delta>0?'+':(delta<0?'-':'');
+  const a=Math.abs(delta);
+  if(fmtKey==='pct'||fmtKey==='pct1'||fmtKey==='pts')return s+a.toFixed(1)+' pts';
+  if(fmtKey==='hours')return s+a.toFixed(1)+' h';
+  if(fmtKey==='mmss'||fmtKey==='mmss_')return s+fmtTime(a);
+  if(fmtKey==='ratio')return s+a.toFixed(3);
+  if(fmtKey==='rate')return s+fmt(a)+' t/h';
+  if(fmtKey==='tons')return s+fmt(a)+' t';
+  return s+a;
+}
+function recMiss(actual,target,good){
+  if(actual==null||target==null||!isFinite(actual)||!isFinite(target))return null;
+  const gap=(good==='low')?(actual-target):(target-actual);
+  if(!(gap>0.0001))return null;
+  const missPct=Math.abs(target)>0.0001?(gap/Math.abs(target))*100:gap;
+  const absGap=Math.abs(gap);
+  let priority=3;
+  if(missPct>=15||absGap>=10)priority=1;
+  else if(missPct>=5||absGap>=3)priority=2;
+  return {gap,missPct,absGap,priority};
+}
+function collectRecommendations(){
+  const v=V(), recs=[];
+  if(!v)return recs;
+  const sc=viewScores(v);
+  [['Haulage Score',sc.hSc,'trucks'],['Loading Score',sc.lSc,'shovel2']].forEach(([label,val,tab])=>{
+    const miss=recMiss(val,100,'high');
+    if(!miss)return;
+    recs.push({priority:(val<90?1:miss.priority),impact:miss.missPct,area:'Shift Overview',measure:label,
+      actual:recFmtVal('pct1',val),baseline:recFmtVal('pct1',100),gap:recGapVal('pct1',val-100),tab});
+  });
+  if(sc.tm!=null&&Math.abs(sc.tm)>3){
+    const over=Math.abs(sc.tm)-3;
+    recs.push({priority:(over>=6?1:(over>=2?2:3)),impact:over,area:'Truck / Shovel Balance',measure:'Truck Match',
+      actual:recFmtVal('pts',sc.tm),baseline:'±3.0 pts',gap:`${over.toFixed(1)} pts outside band`,tab:'balance'});
+  }
+  const tb=v.truckBalance;
+  if(tb&&tb.pct!=null&&Math.abs(tb.pct)>5){
+    const over=Math.abs(tb.pct)-5;
+    recs.push({priority:(over>=10?1:(over>=4?2:3)),impact:over,area:'Truck / Shovel Balance',measure:'Truck Balance',
+      actual:recFmtVal('pct1',tb.pct),baseline:'±5.0%',gap:`${over.toFixed(1)} pts outside band`,tab:'balance'});
+  }
+  (v.availability||[]).forEach(r=>{
+    [['PA',r.PA,r.bPA,'pct1'],['UA',r.UA,r.bUA,'pct1'],['OE',r.OE,r.bOE,'pct1'],['TPNOH',r.tpnoh,r.btpnoh,'rate']].forEach(([label,a,b,fmtKey])=>{
+      const miss=recMiss(a,b,'high');
+      if(!miss)return;
+      recs.push({priority:((label!=='TPNOH'&&miss.absGap>=5)?1:miss.priority),impact:miss.missPct,area:AVLBL[r.group]||r.group,measure:label,
+        actual:recFmtVal(fmtKey,a),baseline:recFmtVal(fmtKey,b),gap:recGapVal(fmtKey,a-b),tab:'overview'});
+    });
+  });
+  const addProdRecs=(data,area,tab)=>{
+    if(!data||!data.cols||!data.cols.length||!data.rows)return;
+    const all=data.cols[0];
+    data.rows.forEach(r=>{
+      if(!r||!r.good||r.label==='Potential')return;
+      const val=r.vals&&r.vals[all.id];
+      if(!val||val.t==null||val.a==null)return;
+      const miss=recMiss(val.a,val.t,r.good);
+      if(!miss)return;
+      let priority=miss.priority;
+      if(['Total Dumped','Total Moved','NOH','Dig Rate','Truck Productivity'].includes(r.label))priority=1;
+      else if(r.tons)priority=Math.min(priority,2);
+      recs.push({priority,impact:miss.missPct,area,measure:all.label+' · '+r.label,
+        actual:recFmtVal(r.fmt,val.a),baseline:recFmtVal(r.fmt,val.t),gap:recGapVal(r.fmt,val.a-val.t),tab});
+    });
+  };
+  addProdRecs(v.shovelProd,'Shovel Productivity','shovprod');
+  addProdRecs(v.truckProd,'Truck Productivity','truckprod');
+  recs.sort((a,b)=>(a.priority-b.priority)||(b.impact-a.impact)||a.measure.localeCompare(b.measure));
+  return recs;
+}
+function renderRecommendations(){
+  const recs=collectRecommendations();
+  const el=document.getElementById('recBody');
+  if(!recs.length){el.innerHTML='<div class="foot">All tracked measures are at or above baseline for this shift/view.</div>';return;}
+  const meta={1:{label:'High priority',color:'#b3382b'},2:{label:'Medium priority',color:'#b3760f'},3:{label:'Low priority',color:'#2f7a44'}};
+  let h=`<div class="badges">`+[1,2,3].map(k=>`<span class="badge"><b style="color:${meta[k].color}">${meta[k].label}</b> ${recs.filter(r=>r.priority===k).length}</span>`).join('')+`</div>`;
+  [1,2,3].forEach(k=>{
+    const rows=recs.filter(r=>r.priority===k);
+    if(!rows.length)return;
+    h+=`<h4 class="mini">${meta[k].label}</h4><table class="lanetab"><tr><th>Area</th><th>Measure</th><th>Actual</th><th>Baseline</th><th>Gap</th><th></th></tr>`;
+    rows.forEach(r=>{
+      h+=`<tr><td>${r.area}</td><td>${r.measure}</td><td>${r.actual}</td><td>${r.baseline}</td><td style="color:${meta[k].color};font-weight:700">${r.gap}</td><td><button class="tlbtn" onclick="setTab('${r.tab}')">Open</button></td></tr>`;
+    });
+    h+='</table>';
+  });
+  el.innerHTML=h;
+}
 function renderTrends(){
   document.getElementById('trsub').textContent='('+view+')';
   const chron=DATA.shifts.slice().reverse();   // oldest → newest
@@ -4109,7 +4218,7 @@ function buildProdTable(d,k,emptyMsg){
   document.getElementById(P.body).innerHTML=s+'</table></div>';
 }
 function renderTruckProd(){ buildProdTable(V().truckProd,'tp','No truck productivity data for this view.'); }
-const TABS=[['overview','Shift Overview',0],['matplace','Material Placement',0],['balance','Truck / Shovel Balance',0],['shovel2','Shovel Waterfall',0],['loading','Loading drill-down',1],['shovprod','Shovel Productivity',1],['trucks','Truck Waterfall',0],['haulage','Haulage drill-down',1],['truckflow','Truck Flow',1],['delays','Delays & Standby',1],['truckprod','Truck Productivity',1],['hourlyperf','Hourly Production',0],['lube','Fuel and Lube',0],['shiftstats','Shift Stats',0],['trends','Cross-Shift Trends',0],['appendix','Appendix',0],['sandbox','Sandbox',0]];
+const TABS=[['overview','Shift Overview',0],['recommendations','Recommendations',0],['matplace','Material Placement',0],['balance','Truck / Shovel Balance',0],['shovel2','Shovel Waterfall',0],['loading','Loading drill-down',1],['shovprod','Shovel Productivity',1],['trucks','Truck Waterfall',0],['haulage','Haulage drill-down',1],['truckflow','Truck Flow',1],['delays','Delays & Standby',1],['truckprod','Truck Productivity',1],['hourlyperf','Hourly Production',0],['lube','Fuel and Lube',0],['shiftstats','Shift Stats',0],['trends','Cross-Shift Trends',0],['appendix','Appendix',0],['sandbox','Sandbox',0]];
 let tab='overview';
 let sbAuto=true;   // sidebar auto-hides (slides off-screen) by default; hover the left edge to reveal
 function applySidebar(){document.body.classList.toggle('sb-auto',sbAuto);if(!sbAuto)document.body.classList.remove('sb-show');posHideTab();}
@@ -4131,10 +4240,11 @@ function renderPageNav(){const idx=TABS.findIndex(t=>t[0]===tab);
   const pv=document.getElementById('pgPrev'),nx=document.getElementById('pgNext'),lb=document.getElementById('pgLabel');
   if(pv)pv.disabled=idx<=0; if(nx)nx.disabled=idx>=TABS.length-1;
   if(lb)lb.textContent=(idx+1)+' / '+TABS.length+' · '+(TABS[idx]?TABS[idx][1]:'');}
-function setSubs(){['wfsub','shovsub','hcsub','ansub','owsub','lanesub','dhsub','dlsub','tlsub','avsub','avsub2','dtlsub','lhsub','lusub','hitsub','shov2sub','dssub','hpsub','spsub','tpsub','sssub','tfsub'].forEach(id=>{const e=document.getElementById(id);if(e)e.textContent='('+view+')';});}
+function setSubs(){['wfsub','shovsub','hcsub','ansub','owsub','lanesub','dhsub','dlsub','tlsub','avsub','avsub2','dtlsub','lhsub','lusub','hitsub','shov2sub','dssub','hpsub','spsub','tpsub','sssub','tfsub','recsub'].forEach(id=>{const e=document.getElementById(id);if(e)e.textContent='('+view+')';});}
 function renderTab(){
   setSubs(); renderPageNav();
   if(tab==='overview'){try{renderOverview();}catch(e){console.error(e);}}
+  else if(tab==='recommendations'){try{renderRecommendations();}catch(e){console.error(e);}}
   else if(tab==='trends'){try{renderTrends();}catch(e){console.error(e);}}
   else if(tab==='balance'){renderCards();}
   else if(tab==='sandbox'){try{renderSandbox();}catch(e){console.error(e);}}

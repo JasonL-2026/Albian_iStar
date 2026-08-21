@@ -14,6 +14,9 @@ Versions follow [semantic versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 <!-- Add changes here as they are merged to DEV/TEST, before tagging a release -->
 
+### Added
+- Added a **Recommendations** tab that surfaces below-baseline measures, sorts them by priority, and links back to the source tab for drill-down.
+
 ### Changed
 - Updated repository governance documentation to formalize PR-only promotion flow (`feature|fix -> DEV -> TEST -> PROD -> BACKUP`) and required PR evidence/approvals.
 - Added GitHub web UI instructions for resolving branch-promotion and PR-evidence check failures before merge.
