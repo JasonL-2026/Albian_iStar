@@ -4771,27 +4771,13 @@ function renderPlaybook(){
     });
   }
 
-  h+=`<h4 style="margin:16px 0 6px;font-size:14px;color:#344">Continuous Shift Handover Checklist</h4>`;
-  h+=`<table class="lanetab"><thead><tr><th style="text-align:left">Item</th><th style="text-align:left">Outgoing Shift Action</th><th style="text-align:left">Incoming Shift Confirm</th></tr></thead><tbody>`;
-  const handoverItems=[
-    ['Truck Assignments','Confirm current shovel–truck assignments and any re-routes','Verify assignments match current dig-face status'],
-    ['Active Faults','Log all in-progress equipment faults and ETA for repair','Review fault log; assign follow-up operator or maintenance contact'],
-    ['Cycle-Time Issues','Identify shovels or haul roads with above-budget cycle times (see actions above)','Acknowledge high-priority items and assign responsible supervisor'],
-    ['Crusher / Dump Status','Record crusher availability and any queue-bunching events this shift','Check crusher schedule; brief drivers on active dump restrictions'],
-    ['Production vs Plan','Record actual tonnage vs shift plan and cumulative position','Note gap and agree minimum rate target for the incoming shift'],
-    ['Safety & Berm Conditions','Note any road or berm repairs in progress; flag weather/visibility concerns','Walk-down or radio check on flagged areas before releasing trucks'],
-  ];
-  handoverItems.forEach(([item,out,inc])=>{
-    h+=`<tr><td style="font-weight:600;font-size:13px;white-space:nowrap">${item}</td><td style="font-size:13px">${out}</td><td style="font-size:13px">${inc}</td></tr>`;
-  });
-  h+=`</tbody></table>`;
   h+=`</div>`;
 
   // =========================================================
   // PRODUCTION REPORTING & TRACKING ONLY
   // =========================================================
   h+=`<div style="margin-bottom:24px">`;
-  h+=`<h3 style="margin:0 0 6px;font-size:20px;color:#2b2f36;border-bottom:2px solid #e0a41f;padding-bottom:6px">3 · Production Reporting &amp; Tracking</h3>`;
+  h+=`<h3 style="margin:0 0 6px;font-size:20px;color:#2b2f36;border-bottom:2px solid #e0a41f;padding-bottom:6px">2 · Production Reporting &amp; Tracking</h3>`;
 
   // Actual vs expected summary card
   const actTxt=latestAct!=null?fmt2(latestAct)+' t':'—';
