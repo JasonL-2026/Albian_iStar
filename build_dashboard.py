@@ -43,13 +43,14 @@ _WF_PRIO_META={
     'Payload':   {'label':'Payload Variance',  'tab':'shovprod','kpis':'Avg weighed payload vs. 361 t target; 10-10-20 rule compliance'},
 }
 _WF_PRIO_THRESH=7500  # minimum |delta_t| to include in summary
+_REC_WINDOW_SHIFTS=14
 
 def compute_wf_priority_summary(wf, shift_count=1):
     """Build a ranked waterfall-gap summary for the Recommendations tab.
 
     Args:
         wf: trucksWF dict (must have 'rows', 'potential', 'actual' keys)
-        shift_count: number of shifts aggregated (1 = per-shift, 7 = weekly)
+        shift_count: number of shifts aggregated (1 = per-shift, 14 = rolling window)
 
     Returns a dict:
       {'losses': [...], 'gains': [...], 'potential': int, 'actual': int, 'shiftCount': int}
@@ -74,6 +75,48 @@ def compute_wf_priority_summary(wf, shift_count=1):
     gains.sort(key=lambda x:-x['delta_t'])   # largest gain first
     return {'losses':losses,'gains':gains,
             'potential':round(potential),'actual':round(actual),'shiftCount':shift_count}
+
+def merge_avail_decomp(avails):
+    avs=[a for a in avails if a]
+    if not avs: return None
+    out={}
+    for key in ('pa','ua','oe'):
+        t=sum(a.get(key,{}).get('t',0) for a in avs)
+        num=sum(a.get(key,{}).get('num',0.0) for a in avs)
+        den=sum(a.get(key,{}).get('den',0.0) for a in avs)
+        budNum=sum(a.get(key,{}).get('budNum',0.0) for a in avs)
+        budDen=sum(a.get(key,{}).get('budDen',0.0) for a in avs)
+        out[key]={'t':round(t),
+                  'act':round(num/den*100,1) if den>0 else 0.0,
+                  'bud':round(budNum/budDen*100,1) if budDen>0 else 0.0,
+                  'reasons':[],
+                  'num':num,'den':den,'budNum':budNum,'budDen':budDen}
+    return out
+
+def merge_wf_period(wfs):
+    items=[wf for wf in wfs if wf]
+    if not items: return None
+    row_keys=sorted({k for wf in items for k in (wf.get('rows') or {})})
+    rows={k:round(sum((wf.get('rows') or {}).get(k,0) for wf in items)) for k in row_keys}
+    potential=sum(wf.get('potential',0) for wf in items)
+    actual=sum(wf.get('actual',0) for wf in items)
+    n=sum(wf.get('n',0) for wf in items)
+    out={'potential':round(potential),'actual':round(actual),'rows':rows,'n':n,
+         'residual':round(actual-(potential+sum(rows.values())))}
+    av=merge_avail_decomp([wf.get('availDecomp') for wf in items if wf.get('availDecomp')])
+    if av:
+        out['availDecomp']=av
+        out['schedPotential']=round(sum(wf.get('schedPotential',wf.get('potential',0)) for wf in items))
+    else:
+        out['schedPotential']=round(potential)
+    keys=sorted({k for wf in items for k in (wf.get('lm') or {})})
+    if n>0 and keys:
+        out['lm']={k:{
+            'actual':sum(wf['lm'][k]['actual']*wf.get('n',0) for wf in items if (wf.get('lm') or {}).get(k))/n,
+            'target':sum(wf['lm'][k]['target']*wf.get('n',0) for wf in items if (wf.get('lm') or {}).get(k))/n,
+            'unit':next((wf['lm'][k]['unit'] for wf in items if (wf.get('lm') or {}).get(k)),'time')
+        } for k in keys}
+    return out
 CYC=['Queue','Spot','Load','Empty','Full','DumpIdle','Dumping']
 import statistics as _st
 from datetime import datetime as _dtm, timedelta as _td
@@ -670,9 +713,15 @@ def build_shift(sm):
             other=sum(v for k,v in d[limit:])
             if other>0.5: out.append(['Other',round(other,1)])
             return out
-        return {'pa':{'t':round(pa_t),'act':round(PAa,1),'bud':round(PAb,1),'reasons':reasons_of('Down')},
-                'ua':{'t':round(ua_t),'act':round(UAa,1),'bud':round(UAb,1),'reasons':reasons_of('Standby')},
-                'oe':{'t':round(oe_t),'act':round(OEa,1),'bud':round(OEb,1),'reasons':reasons_of('Delay')}}
+        pbud=sum(bud(p,'PA797')*bud(p,'NOH797') for p in pits)
+        ubud=sum(bud(p,'UA797')*bud(p,'NOH797') for p in pits)
+        ebud=sum(bud(p,'OE797')*bud(p,'NOH797') for p in pits)
+        return {'pa':{'t':round(pa_t),'act':round(PAa,1),'bud':round(PAb,1),'reasons':reasons_of('Down'),
+                      'num':AR+ADe+AS,'den':TH,'budNum':pbud,'budDen':w},
+                'ua':{'t':round(ua_t),'act':round(UAa,1),'bud':round(UAb,1),'reasons':reasons_of('Standby'),
+                      'num':AR+ADe,'den':AR+ADe+AS,'budNum':ubud,'budDen':w},
+                'oe':{'t':round(oe_t),'act':round(OEa,1),'bud':round(OEb,1),'reasons':reasons_of('Delay'),
+                      'num':AR,'den':AR+ADe,'budNum':ebud,'budDen':w}}
     def scale_av(av,share):
         # allocate fleet PA/UA/OE tonnage effects to a material by its potential share (%, reasons unchanged)
         if not av: return None
@@ -714,7 +763,7 @@ def build_shift(sm):
         lanes.sort(key=lambda x:(x['shovel'],-x['pot']))
         rn=sum(ratio_n[p] for p in pits); rd=sum(ratio_d[p] for p in pits)
         schedDelta=(av['pa']['t']+av['ua']['t']+av['oe']['t']) if av else 0.0
-        return {'potential':pot,'actual':act,'rows':rows,'residual':residual,'byMaterial':mat,'lm':_lm(tops),
+        return {'potential':pot,'actual':act,'rows':rows,'residual':residual,'byMaterial':mat,'lm':_lm(tops),'n':sum(s['n'] for s in tops),
                 'availDecomp':av,'schedPotential':pot-schedDelta,
                 'nohTonnes':noh_t,'lanes':lanes,'nohPct':an/bn*100 if bn else 0,'nohActual':an,'nohBudget':bn,'emptyFullRatio':rn/rd if rd else 0}
     def shovel_seg_decomp(pits):
@@ -807,9 +856,12 @@ def build_shift(sm):
             other=sum(v for k,v in d[limit:])
             if other>0.5: out.append(['Other',round(other,1)])
             return out
-        return {'pa':{'t':round(pa_t),'act':round(PAa,1),'bud':round(PAb,1),'reasons':reasons_of('Down')},
-                'ua':{'t':round(ua_t),'act':round(UAa,1),'bud':round(UAb,1),'reasons':reasons_of('Standby')},
-                'oe':{'t':round(oe_t),'act':round(OEa,1),'bud':round(OEb,1),'reasons':reasons_of('Delay')}}
+        return {'pa':{'t':round(pa_t),'act':round(PAa,1),'bud':round(PAb,1),'reasons':reasons_of('Down'),
+                      'num':AR+ADe+AS,'den':TH,'budNum':PAbw,'budDen':wsum},
+                'ua':{'t':round(ua_t),'act':round(UAa,1),'bud':round(UAb,1),'reasons':reasons_of('Standby'),
+                      'num':AR+ADe,'den':AR+ADe+AS,'budNum':UAbw,'budDen':wsum},
+                'oe':{'t':round(oe_t),'act':round(OEa,1),'bud':round(OEb,1),'reasons':reasons_of('Delay'),
+                      'num':AR,'den':AR+ADe,'budNum':OEbw,'budDen':wsum}}
     def avail_decomp_unit(u,pit):
         # Per-unit PA/UA/OE decomposition (same sequential method as the fleet aggregate, one Eqmt).
         # Total/calendar hours TH = Ready+Delay+Standby+Down; GOH=Ready+Delay; NOH=Ready.
@@ -840,9 +892,12 @@ def build_shift(sm):
             o=sum(v for k,v in d[limit:])
             if o>0.3: out.append(['Other',round(o,1)])
             return out
-        return {'pa':{'t':round(pa_t),'act':round(PAa*100,1),'bud':round(PAb*100,1),'reasons':rsn('Down')},
-                'ua':{'t':round(ua_t),'act':round(UAa*100,1),'bud':round(UAb*100,1),'reasons':rsn('Standby')},
-                'oe':{'t':round(oe_t),'act':round(OEa*100,1),'bud':round(OEb*100,1),'reasons':rsn('Delay')}}
+        return {'pa':{'t':round(pa_t),'act':round(PAa,1),'bud':round(PAb,1),'reasons':reasons_of('Down'),
+                      'num':AR+ADe+AS,'den':TH,'budNum':PAbw,'budDen':wsum},
+                'ua':{'t':round(ua_t),'act':round(UAa,1),'bud':round(UAb,1),'reasons':reasons_of('Standby'),
+                      'num':AR+ADe,'den':AR+ADe+AS,'budNum':UAbw,'budDen':wsum},
+                'oe':{'t':round(oe_t),'act':round(OEa,1),'bud':round(OEb,1),'reasons':reasons_of('Delay'),
+                      'num':AR,'den':AR+ADe,'budNum':OEbw,'budDen':wsum}}
     def agg_shov2(pits):
         seg=shovel_seg_decomp(pits)
         if not seg: return None
@@ -1824,7 +1879,8 @@ def build_shift(sm):
         vw['fleetMatch']=agg_fleetMatch(pits,vw['trucksWF'],vw['shovelWF2'],vw['truckBalance'])
         vw['opDeployed']=agg_ophourly(pits)
         vw['shiftRecs']=compute_shift_recommendations(pits,fx,loads,t1)
-        vw['wfPrioritySummary']={'perShift':compute_wf_priority_summary(vw['trucksWF']),'weekly':None}
+        vw['wfPrioritySummary']={'perShift':compute_wf_priority_summary(vw['trucksWF']),'last14':None}
+        vw['recommendationProdWF']={'last14':None}
         views[name]=vw
     # ---------- appendix: all target / budget numbers used, for this shift ----------
     def _oe(nohc,gohc,p): g=bud(p,gohc); return (bud(p,nohc)/g*100) if g>0 else None
@@ -1900,18 +1956,18 @@ for sid in byShift:
         c['reqFuture']=round(req) if req is not None else None
         c['monthBudget']=round(mbud); c['monthActual']=round(act); c['futureShifts']=future; c['monthShifts']=total
 
-# ---- last-7-shifts waterfall priority summary (weekly view) ----
+# ---- toggle-aligned recommendations rollups (selected shift vs trailing window) ----
 _all_sids=sorted(byShift.keys(),reverse=True)   # most-recent first
 for vn in _VPITS:
-    last7=[s for s in _all_sids if byShift[s]['views'].get(vn) and byShift[s]['views'][vn].get('trucksWF')][:7]
-    if not last7: continue
-    agg_rows={k:sum(byShift[s]['views'][vn]['trucksWF']['rows'].get(k,0) for s in last7) for k in WF_ROWS}
-    agg_pot=sum(byShift[s]['views'][vn]['trucksWF']['potential'] for s in last7)
-    agg_act=sum(byShift[s]['views'][vn]['trucksWF']['actual'] for s in last7)
-    weekly=compute_wf_priority_summary({'rows':agg_rows,'potential':agg_pot,'actual':agg_act},shift_count=len(last7))
-    for sid in byShift:
+    for i,sid in enumerate(_all_sids):
         v=byShift[sid]['views'].get(vn)
-        if v and v.get('wfPrioritySummary'): v['wfPrioritySummary']['weekly']=weekly
+        if not v: continue
+        window=[wsid for wsid in _all_sids[i:i+_REC_WINDOW_SHIFTS] if byShift[wsid]['views'].get(vn)]
+        twf=merge_wf_period([byShift[wsid]['views'][vn].get('trucksWF') for wsid in window])
+        swf=merge_wf_period([byShift[wsid]['views'][vn].get('shovelWF2') for wsid in window])
+        if v.get('wfPrioritySummary'):
+            v['wfPrioritySummary']['last14']=compute_wf_priority_summary(twf,shift_count=len(window)) if twf else None
+        v['recommendationProdWF']={'last14':{'trucksWF':twf,'shovelWF2':swf,'shiftCount':len(window)}}
 
 out={'meta':{'generated':datetime.datetime.now().strftime('%Y-%m-%d %H:%M'),'payloadTarget':PAYLOAD_TARGET},
      'shifts':shiftlist,'defaultShift':(SHIFTS[0]['id'] if SHIFTS else None),'byShift':byShift}
@@ -3323,7 +3379,7 @@ function renderShovBox(which){
   else document.getElementById('chLoadS2').innerHTML=drawBoxPlot(a.loadbox,{axisLabel:'load time (min)',unit:' min',scale:1/60,dec:1,hideOutliers:true});
 }
 let shovAllOpen=false;   // Expand all / Contract all for the shovel-waterfall box plots
-let wfPrioMode='perShift';   // Waterfall Priority Gaps toggle: 'perShift' | 'weekly'
+let wfPrioMode='perShift';   // Recommendations toggle: 'perShift' | 'last14'
 function toggleShovExpand(){
   shovAllOpen=!shovAllOpen;
   Object.keys(SHOVBOX).forEach(w=>{const [sid,bid,lbl]=SHOVBOX[w];const sec=document.getElementById(sid),btn=document.getElementById(bid);
@@ -4197,21 +4253,21 @@ function renderRecommendations(){
   const el=document.getElementById('recBody');
   const meta={1:{label:'High priority',color:'#b3382b'},2:{label:'Medium priority',color:'#b3760f'},3:{label:'Low priority',color:'#2f7a44'}};
 
-  // ---- Section 0: Waterfall Priority Gaps (Python-computed, per-shift + weekly) ----
+  // ---- Section 0: Waterfall Priority Gaps (Python-computed, per-shift + trailing-14-shift) ----
   const wfps=(V()&&V().wfPrioritySummary)||null;
   const wfpData=wfps?(wfps[wfPrioMode]||wfps['perShift']):null;
   const gSign=n=>(n>=0?'+':'')+Math.round(n).toLocaleString();
   let h='<h3 style="margin:0 0 6px;font-size:15px;color:#344">Waterfall Priority Gaps</h3>';
   h+=`<p style="margin:0 0 10px;font-size:12px;color:var(--muted)">Waterfall components with |gap| &gt; 7,500 t vs. Potential, ranked by absolute tonnage loss. Threshold: <b>High</b> &gt;50k t · <b>Medium</b> 15k–50k t · <b>Low</b> 7.5k–15k t. Gains shown separately below.</p>`;
-  h+=`<div style="margin-bottom:10px">`+['perShift','weekly'].map(m=>{
-    const lbl=m==='perShift'?'This Shift':'Last 7 Shifts';
+  h+=`<div style="margin-bottom:10px">`+['perShift','last14'].map(m=>{
+    const lbl=m==='perShift'?'This Shift':'Last 14 Shifts';
     const on=wfPrioMode===m;
     return `<button onclick="wfPrioMode='${m}';renderRecommendations()" style="margin-right:6px;padding:4px 12px;border-radius:4px;border:1px solid ${on?'#3f51b5':'#ccd'};background:${on?'#3f51b5':'#f5f7fa'};color:${on?'#fff':'#445'};font-weight:${on?'600':'400'};cursor:pointer;font-size:12px">${lbl}</button>`;
   }).join('')+`</div>`;
   if(!wfpData||(!wfpData.losses.length&&!wfpData.gains.length)){
     h+='<div class="foot">No waterfall components exceed the 7,500 t threshold for this view/period.</div>';
   } else {
-    const scLabel=wfPrioMode==='weekly'?`Last ${wfpData.shiftCount} shifts`:'This shift';
+    const scLabel=wfPrioMode==='last14'?`Last ${wfpData.shiftCount} shifts`:'This shift';
     if(wfpData.losses.length){
       const losBadges=[1,2,3].map(k=>{const n=wfpData.losses.filter(r=>r.priority===k).length; return n?`<span class="badge"><b style="color:${meta[k].color}">${meta[k].label}</b> ${n}</span>`:''}).join('');
       h+=`<h4 class="mini">Losses — below Potential</h4>${losBadges}`;
@@ -4249,10 +4305,13 @@ function renderRecommendations(){
   h+=`<hr style="margin:18px 0 14px;border:none;border-top:1px solid #dde1e8">`;
 
   // ---- Section 1: Productivity Waterfall Summary ----
-  const twf=V()&&V().trucksWF, swf=V()&&V().shovelWF2;
+  const prodPeriod=wfPrioMode==='last14' ? ((V()&&V().recommendationProdWF&&V().recommendationProdWF.last14)||null) : null;
+  const prodShiftCount=prodPeriod&&prodPeriod.shiftCount ? prodPeriod.shiftCount : 1;
+  const twf=wfPrioMode==='last14' ? (prodPeriod?prodPeriod.trucksWF:null) : (V()&&V().trucksWF);
+  const swf=wfPrioMode==='last14' ? (prodPeriod?prodPeriod.shovelWF2:null) : (V()&&V().shovelWF2);
   h+=`<hr style="margin:18px 0 14px;border:none;border-top:1px solid #dde1e8">`;
   h+=`<h3 style="margin:0 0 4px;font-size:15px;color:#344">Productivity Waterfall Summary</h3>`;
-  h+=`<p style="margin:0 0 12px;font-size:12px;color:var(--muted)">Combined bridge from Scheduled Potential to Actual across both Trucks and Shovels for the active <b>${view}</b> toggle selection. All KPI drivers are ranked by absolute tonnage impact — <span style="color:#2f7a44;font-weight:600">green&nbsp;= gain</span>, <span style="color:#b3382b;font-weight:600">red&nbsp;= loss</span>. Potential is the higher (unconstrained) fleet potential; a Residual row closes any accounting gap. Click <b>Open</b> to drill into the source tab.</p>`;
+  h+=`<p style="margin:0 0 12px;font-size:12px;color:var(--muted)">Combined bridge from Scheduled Potential to Actual across both Trucks and Shovels for the active <b>${view}</b> toggle selection (${wfPrioMode==='last14'?`last ${prodShiftCount} shifts`:'this shift'}). All KPI drivers are ranked by absolute tonnage impact — <span style="color:#2f7a44;font-weight:600">green&nbsp;= gain</span>, <span style="color:#b3382b;font-weight:600">red&nbsp;= loss</span>. Potential is the higher (unconstrained) fleet potential; a Residual row closes any accounting gap. Click <b>Open</b> to drill into the source tab.</p>`;
   if(!twf&&!swf){
     h+='<div class="foot">No waterfall data available for this view.</div>';
   } else {
