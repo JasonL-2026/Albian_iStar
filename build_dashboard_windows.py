@@ -1508,13 +1508,12 @@ table.wf td.lead .ta{color:#2b2f36;font-weight:600}
     </section>
 
     <section class="page" id="pg-lube" hidden>
-      <div class="section">
-        <h2>Hourly fuel delay — this shift <span class="sub" id="lhsub"></span></h2>
-        <div class="chartwrap" style="height:280px"><canvas id="chLubeTrend"></canvas></div>
-      </div>
       <div class="charts">
         <div class="chartcard"><h3>Fuel level at refuel <span class="sub" id="lusub"></span></h3><div class="chartwrap"><canvas id="chLubeFuel"></canvas></div></div>
-        <div class="chartcard"><h3>Actual vs expected by reason</h3><div id="lubeReasons"></div></div>
+        <div class="chartcard"><h3>Hourly fuel delay — this shift <span class="sub" id="lhsub"></span></h3><div class="chartwrap" style="height:280px"><canvas id="chLubeTrend"></canvas></div></div>
+      </div>
+      <div class="charts">
+        <div class="chartcard widecard"><h3>Actual vs expected by reason</h3><div id="lubeReasons"></div></div>
       </div>
       <div class="charts">
         <div class="chartcard"><h3>Overrun leaderboard — this shift</h3><div id="lubeLead"></div></div>
@@ -1849,12 +1848,13 @@ function renderLube(){
     ctx.restore();
   }};
   mk('chLubeTrend',{type:'bar',data:{labels:hy.hours,datasets:[
-    {type:'bar',label:'Fuel & lube',data:fuelH,backgroundColor:'#1f9e8b',stack:'s'},
-    {type:'bar',label:'Wait for bay',data:waitH,backgroundColor:'#e0952a',stack:'s'},
-    {type:'bar',label:'Break',data:brkH,backgroundColor:'#9aa0ab',stack:'s'},
-    {type:'line',label:'Expected',data:expH,borderColor:'#2b2f36',borderDash:[4,3],pointRadius:0,borderWidth:1.4}
+    {type:'bar',label:'Fuel & lube',data:fuelH,backgroundColor:'#1f9e8b',stack:'s',order:2},
+    {type:'bar',label:'Wait for bay',data:waitH,backgroundColor:'#e0952a',stack:'s',order:2},
+    {type:'bar',label:'Break',data:brkH,backgroundColor:'#9aa0ab',stack:'s',order:2},
+    {type:'line',label:'Expected',data:expH,borderColor:'#2b2f36',borderDash:[4,3],pointRadius:0,borderWidth:1.4,fill:false,order:1}
   ]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:14,bottom:14}},plugins:{legend:{labels:{boxWidth:11,font:{size:10}}},tooltip:{callbacks:{footer:c=>{const i=c[0].dataIndex;return 'total '+(fuelH[i]+waitH[i]+brkH[i]).toFixed(1)+'h · '+hy.occ[i]+' occ'+(hy.occWait[i]?' ('+hy.occWait[i]+' wait for bay)':'');}}}},scales:{x:{stacked:true,title:{display:true,text:'hour of shift'},ticks:{font:{size:10}}},y:{stacked:true,title:{display:true,text:'hours'},ticks:{font:{size:10}}}}},plugins:[barLabels]});
   const fh=lu.fuelHist, fhTot=fh.reduce((a,b)=>a+b,0)||1;
+  const fuelAvg=fhTot/fh.length;
   const fuelPct={id:'fuelPct',afterDatasetsDraw(ch){
     const ctx=ch.ctx,y=ch.scales.y,m=ch.getDatasetMeta(0); if(!m) return;
     ctx.save(); ctx.textAlign='center'; ctx.textBaseline='bottom'; ctx.font='600 9px system-ui,sans-serif'; ctx.fillStyle='#2b2f36';
@@ -1862,12 +1862,20 @@ function renderLube(){
       ctx.fillText(Math.round(v/fhTot*100)+'%',bar.x,y.getPixelForValue(v)-3);});
     ctx.restore();
   }};
+  const fuelAvgLine={id:'fuelAvgLine',afterDatasetsDraw(ch){
+    const ctx=ch.ctx,y=ch.scales.y,ca=ch.chartArea; if(!ca) return;
+    const yp=y.getPixelForValue(fuelAvg);
+    ctx.save(); ctx.beginPath(); ctx.setLineDash([5,4]); ctx.strokeStyle='#2b2f36'; ctx.lineWidth=1.4;
+    ctx.moveTo(ca.left,yp); ctx.lineTo(ca.right,yp); ctx.stroke();
+    ctx.setLineDash([]); ctx.font='600 9px system-ui,sans-serif'; ctx.fillStyle='#2b2f36';
+    ctx.textAlign='left'; ctx.textBaseline='bottom';
+    ctx.fillText('avg',ca.right+2,yp+1);
+    ctx.restore();
+  }};
   const fe=lu.fuelEdges||[0,10,20,30,40,50,60,70,80,90,100];
   mk('chLubeFuel',{type:'bar',data:{labels:fh.map((_,i)=>fe[i]+'-'+fe[i+1]),datasets:[
     {label:'events',data:fh,backgroundColor:fh.map((_,i)=>fe[i]<8?'#e23b32':(fe[i]<40?'#1f9e8b':'#9aa0ab'))}
-  ]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:12}},plugins:{legend:{display:false},tooltip:{callbacks:{title:c=>c[0].label+'% fuel',label:c=>c.parsed.y+' events ('+Math.round(c.parsed.y/fhTot*100)+'% of day)'}}},scales:{x:{ticks:{font:{size:9}}},y:{title:{display:true,text:'events'},ticks:{font:{size:10}}}}},plugins:[fuelPct]});
-}
-function renderAvailTab(){
+  ]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:12,right:28}},plugins:{legend:{display:false},tooltip:{callbacks:{title:c=>c[0].label+'% fuel',label:c=>c.parsed.y+' events ('+Math.round(c.parsed.y/fhTot*100)+'% of day)'}}},scales:{x:{ticks:{font:{size:9}}},y:{title:{display:true,text:'events'},ticks:{font:{size:10}}}}},plugins:[fuelPct,fuelAvgLine]});
   const av=V().availability,MET=[['PA','PA','bPA'],['UA','UA','bUA'],['OE','OE','bOE']];
   // actual-vs-budget comparison cards (one per equipment)
   let cards='';

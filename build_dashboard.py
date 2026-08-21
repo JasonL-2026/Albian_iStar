@@ -114,6 +114,7 @@ for _r in tad_all:   # tolerate the 'd'-prefixed export schema (dShiftId, dDumpL
     for _k in list(_r.keys()):
         if len(_k)>=2 and _k[0]=='d' and _k[1].isupper(): _r.setdefault(_k[1:], _r[_k])
 lube_all=load_csv('TruckAtLubeLand.csv')
+fuel_assign_all=load_csv('SystemVsManualFuelAssignments.csv')
 def _lube_ok(r):   # ignore FUEL&LUBE / FUEL BREAK events under 20 s (counted separately)
     return not (r['Reason'] in ('FUEL&LUBE','FUEL BREAK') and num(r['Duration'])<20)
 def lube_trend(pits):   # cross-shift (all shifts) lube minutes by reason + expected, filtered by pit
@@ -488,9 +489,22 @@ def build_shift(sm):
         hourly={'hours':[f"{(base+i)%24:02d}:00" for i in range(12)],'fuel':[round(x,1) for x in hb['fuel']],
                 'wait':[round(x,1) for x in hb['wait']],'brk':[round(x,1) for x in hb['brk']],
                 'exp':[round(x,1) for x in hb['exp']],'occ':occ,'occWait':occWait}
+        # ---- fuel assignment automation (System vs Manual) ----
+        fa=[r for r in fuel_assign_all if r.get('ShiftID')==sid and any(p in (r.get('ToLocation') or '') for p in pits)]
+        fa_sys=[r for r in fa if r.get('AssignType')=='System Fuel Assignment']
+        fa_man_raw=[r for r in fa if r.get('AssignType')=='Dispatcher Fuel Assignment']
+        fa_man_latest={}
+        for r in fa_man_raw:
+            tk=r.get('messagebody',''); ts=_dtp(r.get('TIMESTAMP',''))
+            if tk and ts and (tk not in fa_man_latest or ts>fa_man_latest[tk][1]):
+                fa_man_latest[tk]=(r,ts)
+        fa_sys_n=len(fa_sys); fa_man_n=len(fa_man_latest); fa_tot=fa_sys_n+fa_man_n
+        fuelAssign={'system':fa_sys_n,'manual':fa_man_n,'total':fa_tot,
+                    'sysPct':round(fa_sys_n/fa_tot*100) if fa_tot else 0,
+                    'manPct':round(fa_man_n/fa_tot*100) if fa_tot else 0}
         return {'reasons':reasons,'fuelHist':hist,'fuelEdges':FEDGES,'faulty':faulty,'zero':zero,'shortCount':short,
                 'leaderboard':leaderboard,'byClass':byClass,'n':len(Lv),'hourly':hourly,
-                'faultySensor':faultySensor}
+                'faultySensor':faultySensor,'fuelAssign':fuelAssign}
 
     # ---- aggregators (close over the shift locals) ----
     def agg_haul(pits):
@@ -2244,13 +2258,12 @@ body.sb-auto .pagenav{display:flex}
     </section>
 
     <section class="page" id="pg-lube" hidden>
-      <div class="section">
-        <h2>Hourly Fuel Delay — This Shift <span class="sub" id="lhsub"></span></h2>
-        <div class="chartwrap" style="height:280px"><canvas id="chLubeTrend"></canvas></div>
-      </div>
       <div class="charts">
         <div class="chartcard"><h3>Fuel Level at Refuel <span class="sub" id="lusub"></span></h3><div class="chartwrap"><canvas id="chLubeFuel"></canvas></div></div>
-        <div class="chartcard"><h3>Actual vs Expected by Reason</h3><div id="lubeReasons"></div></div>
+        <div class="chartcard"><h3>Hourly Fuel Delay — This Shift <span class="sub" id="lhsub"></span></h3><div class="chartwrap" style="height:280px"><canvas id="chLubeTrend"></canvas></div></div>
+      </div>
+      <div class="charts">
+        <div class="chartcard widecard"><h3>Actual vs Expected by Reason</h3><div id="lubeReasons"></div></div>
       </div>
       <div class="charts">
         <div class="chartcard"><h3>Overrun Leaderboard — This Shift</h3><div id="lubeLead"></div></div>
@@ -2258,6 +2271,8 @@ body.sb-auto .pagenav{display:flex}
           <div><h3>By Truck Class</h3><div id="lubeClass"></div></div>
           <div><h3>Faulty Fuel-Level Sensors <span class="sub" id="lfssub"></span></h3>
           <div id="lubeFaulty"></div></div>
+          <div><h3>Assignment Automation</h3>
+          <div id="lubeAssignAuto"></div></div>
         </div>
       </div>
       <div class="foot" id="lubeNote"></div>
@@ -2634,6 +2649,21 @@ function renderLube(){
       g.forEach((r,i)=>{ft+=`<tr><td>${i===0?t+' ('+g.length+')':''}</td><td>${r.eqmt}</td><td>${r.reads}</td><td style="color:var(--red);font-weight:700">${r.value} %</td></tr>`;});});
     document.getElementById('lubeFaulty').innerHTML=ft+'</table>';
   }
+  // ---- assignment automation (System vs Manual) ----
+  {
+    const fa=lu.fuelAssign||{};
+    const bar=(pct,color)=>`<div style="display:inline-block;width:${pct}%;height:12px;background:${color};border-radius:2px;vertical-align:middle"></div>`;
+    let ht='<table class="lanetab">';
+    ht+=`<tr><th>Metric</th><th>System</th><th>Manual</th><th>Total</th><th style="min-width:120px">System %</th></tr>`;
+    if(fa.total>0){
+      ht+=`<tr><td>Fuel Assignments</td><td>${fa.system}</td><td>${fa.manual}</td><td>${fa.total}</td>`;
+      ht+=`<td>${bar(fa.sysPct,'#1f9e8b')}${bar(fa.manPct,'#e0952a')} <b>${fa.sysPct}%</b> system</td></tr>`;
+    }else{
+      ht+=`<tr><td colspan="5" class="foot">No fuel assignment data for this shift/view.</td></tr>`;
+    }
+    ht+='</table><div class="foot" style="margin-top:4px">Fuel Assignments: System vs Dispatcher (manual deduplicated to most recent per truck).</div>';
+    document.getElementById('lubeAssignAuto').innerHTML=ht;
+  }
   if(typeof Chart==='undefined')return;
   const hy=lu.hourly, toH=a=>a.map(v=>v/60);
   const fuelH=toH(hy.fuel),waitH=toH(hy.wait),brkH=toH(hy.brk),expH=toH(hy.exp);
@@ -2655,12 +2685,13 @@ function renderLube(){
     ctx.restore();
   }};
   mk('chLubeTrend',{type:'bar',data:{labels:hy.hours,datasets:[
-    {type:'bar',label:'Fuel & lube',data:fuelH,backgroundColor:'#1f9e8b',stack:'s'},
-    {type:'bar',label:'Wait for bay',data:waitH,backgroundColor:'#e0952a',stack:'s'},
-    {type:'bar',label:'Break',data:brkH,backgroundColor:'#9aa0ab',stack:'s'},
-    {type:'line',label:'Expected',data:expH,borderColor:'#2b2f36',borderDash:[4,3],pointRadius:0,borderWidth:1.4}
+    {type:'bar',label:'Fuel & lube',data:fuelH,backgroundColor:'#1f9e8b',stack:'s',order:2},
+    {type:'bar',label:'Wait for bay',data:waitH,backgroundColor:'#e0952a',stack:'s',order:2},
+    {type:'bar',label:'Break',data:brkH,backgroundColor:'#9aa0ab',stack:'s',order:2},
+    {type:'line',label:'Expected',data:expH,borderColor:'#2b2f36',borderDash:[4,3],pointRadius:0,borderWidth:1.4,fill:false,order:1}
   ]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:14,bottom:14}},plugins:{legend:{labels:{boxWidth:11,font:{size:10}}},tooltip:{callbacks:{footer:c=>{const i=c[0].dataIndex;return 'total '+(fuelH[i]+waitH[i]+brkH[i]).toFixed(1)+'h · '+hy.occ[i]+' occ'+(hy.occWait[i]?' ('+hy.occWait[i]+' wait for bay)':'');}}}},scales:{x:{stacked:true,title:{display:true,text:'hour of shift'},ticks:{font:{size:10}}},y:{stacked:true,title:{display:true,text:'hours'},ticks:{font:{size:10}}}}},plugins:[barLabels]});
   const fh=lu.fuelHist, fhTot=fh.reduce((a,b)=>a+b,0)||1;
+  const fuelAvg=fhTot/fh.length;
   const fuelPct={id:'fuelPct',afterDatasetsDraw(ch){
     const ctx=ch.ctx,y=ch.scales.y,m=ch.getDatasetMeta(0); if(!m) return;
     ctx.save(); ctx.textAlign='center'; ctx.textBaseline='bottom'; ctx.font='600 9px system-ui,sans-serif'; ctx.fillStyle='#2b2f36';
@@ -2668,10 +2699,20 @@ function renderLube(){
       ctx.fillText(Math.round(v/fhTot*100)+'%',bar.x,y.getPixelForValue(v)-3);});
     ctx.restore();
   }};
+  const fuelAvgLine={id:'fuelAvgLine',afterDatasetsDraw(ch){
+    const ctx=ch.ctx,y=ch.scales.y,ca=ch.chartArea; if(!ca) return;
+    const yp=y.getPixelForValue(fuelAvg);
+    ctx.save(); ctx.beginPath(); ctx.setLineDash([5,4]); ctx.strokeStyle='#2b2f36'; ctx.lineWidth=1.4;
+    ctx.moveTo(ca.left,yp); ctx.lineTo(ca.right,yp); ctx.stroke();
+    ctx.setLineDash([]); ctx.font='600 9px system-ui,sans-serif'; ctx.fillStyle='#2b2f36';
+    ctx.textAlign='left'; ctx.textBaseline='bottom';
+    ctx.fillText('avg',ca.right+2,yp+1);
+    ctx.restore();
+  }};
   const fe=lu.fuelEdges||[0,10,20,30,40,50,60,70,80,90,100];
   mk('chLubeFuel',{type:'bar',data:{labels:fh.map((_,i)=>fe[i]+'-'+fe[i+1]),datasets:[
     {label:'events',data:fh,backgroundColor:fh.map((_,i)=>fe[i]<8?'#e23b32':(fe[i]<40?'#1f9e8b':'#9aa0ab'))}
-  ]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:12}},plugins:{legend:{display:false},tooltip:{callbacks:{title:c=>c[0].label+'% fuel',label:c=>c.parsed.y+' events ('+Math.round(c.parsed.y/fhTot*100)+'% of day)'}}},scales:{x:{ticks:{font:{size:9}}},y:{title:{display:true,text:'events'},ticks:{font:{size:10}}}}},plugins:[fuelPct]});
+  ]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:12,right:28}},plugins:{legend:{display:false},tooltip:{callbacks:{title:c=>c[0].label+'% fuel',label:c=>c.parsed.y+' events ('+Math.round(c.parsed.y/fhTot*100)+'% of day)'}}},scales:{x:{ticks:{font:{size:9}}},y:{title:{display:true,text:'events'},ticks:{font:{size:10}}}}},plugins:[fuelPct,fuelAvgLine]});
 }
 const AVMET=[['PA','PA','bPA'],['UA','UA','bUA'],['OE','OE','bOE'],['POE','POE',null]];
 function sparkCycle(hourly){   // avg truck cycle time (mm:ss) per hour for a shovel→dump lane, with grid + point labels
