@@ -3256,7 +3256,7 @@ function fillLoadDrill(){
 function toggleDrill(id){const e=document.getElementById(id);if(e)e.classList.toggle('open');}
 
 const ROWLABEL={Payload:'Payload',Load:'Load Time',Queue:'Queue at Shovel',Spot:'Spot at Shovel',
- DumpIdle:'Dump Idle',Dumping:'Dumping',FullHaul:'Full Haul',EmptyHaul:'Empty Haul',Residual:'Residual (basis)'};
+ DumpIdle:'Dump Idle',Dumping:'Dumping',FullHaul:'Full Haul',EmptyHaul:'Empty Haul',Residual:'Non-Productive'};
 const ORDER=['Payload','Load','Queue','Spot','DumpIdle','Dumping','FullHaul','EmptyHaul'];
 function fmtTime(s){const m=Math.floor(s/60),x=Math.round(s-m*60);return m+':'+(x<10?'0':'')+x;}
 function leadStr(k,lm){   // returns {uom,tgt,act} for the KPI/UOM/Target/Actual columns
@@ -3709,7 +3709,7 @@ function buildCombinedProductivityWF(twf,swf){
   rows.sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta));
   const sumD=rows.reduce((s,r)=>s+r.delta,0);
   const residual=actual-potential-sumD;
-  if(Math.abs(residual)>0.5)rows.push({label:'Residual',delta:residual});
+  if(Math.abs(residual)>0.5)rows.push({label:'Non-Productive',delta:residual,color:'#9aa0ab'});
   return waterfallSVG({startLabel:'Potential',startVal:potential,endLabel:'Actual',endVal:actual,rows});
 }
 // Combined ranked KPI impact table for both fleets — sorted by absolute tonnage impact.
@@ -4343,7 +4343,7 @@ function renderRecommendations(){
   const swf=wfPrioMode==='last14' ? (prodPeriod?prodPeriod.shovelWF2:null) : (V()&&V().shovelWF2);
   h+=`<hr style="margin:18px 0 14px;border:none;border-top:1px solid #dde1e8">`;
   h+=`<h3 style="margin:0 0 4px;font-size:15px;color:#344">Productivity Waterfall Summary</h3>`;
-  h+=`<p style="margin:0 0 12px;font-size:10px;color:var(--muted)">Combined bridge from Scheduled Potential to Actual across both Trucks and Shovels for the active <b>${view}</b> toggle selection (${wfPrioMode==='last14'?`last ${prodShiftCount} shifts`:'this shift'}). All KPI drivers are ranked by absolute tonnage impact — <span style="color:#2f7a44;font-weight:600">green&nbsp;= gain</span>, <span style="color:#b3382b;font-weight:600">red&nbsp;= loss</span>. Potential is the higher (unconstrained) fleet potential; a Residual row closes any accounting gap. Click <b>Open</b> to drill into the source tab.</p>`;
+  h+=`<p style="margin:0 0 12px;font-size:10px;color:var(--muted)">Combined bridge from Scheduled Potential to Actual across both Trucks and Shovels for the active <b>${view}</b> toggle selection (${wfPrioMode==='last14'?`last ${prodShiftCount} shifts`:'this shift'}). All KPI drivers are ranked by absolute tonnage impact — <span style="color:#2f7a44;font-weight:600">green&nbsp;= gain</span>, <span style="color:#b3382b;font-weight:600">red&nbsp;= loss</span>. Potential is the higher (unconstrained) fleet potential; a Non-Productive row closes any accounting gap. Click <b>Open</b> to drill into the source tab.</p>`;
   if(!twf&&!swf){
     h+='<div class="foot">No waterfall data available for this view.</div>';
   } else {
