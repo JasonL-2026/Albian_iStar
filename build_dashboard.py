@@ -2692,6 +2692,7 @@ function renderLube(){
     {type:'line',label:'Expected',data:expH,borderColor:'#2b2f36',borderDash:[4,3],pointRadius:0,borderWidth:1.4}
   ]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:14,bottom:14}},plugins:{legend:{labels:{boxWidth:11,font:{size:10}}},tooltip:{callbacks:{footer:c=>{const i=c[0].dataIndex;return 'total '+(fuelH[i]+waitH[i]+brkH[i]).toFixed(1)+'h · '+hy.occ[i]+' occ'+(hy.occWait[i]?' ('+hy.occWait[i]+' wait for bay)':'');}}}},scales:{x:{stacked:true,title:{display:true,text:'hour of shift'},ticks:{font:{size:10}}},y:{stacked:true,title:{display:true,text:'hours'},ticks:{font:{size:10}}}}},plugins:[barLabels]});
   const fh=lu.fuelHist, fhTot=fh.reduce((a,b)=>a+b,0)||1;
+  const fuelAvg=fhTot/fh.length;
   const fuelPct={id:'fuelPct',afterDatasetsDraw(ch){
     const ctx=ch.ctx,y=ch.scales.y,m=ch.getDatasetMeta(0); if(!m) return;
     ctx.save(); ctx.textAlign='center'; ctx.textBaseline='bottom'; ctx.font='600 9px system-ui,sans-serif'; ctx.fillStyle='#2b2f36';
@@ -2699,10 +2700,20 @@ function renderLube(){
       ctx.fillText(Math.round(v/fhTot*100)+'%',bar.x,y.getPixelForValue(v)-3);});
     ctx.restore();
   }};
+  const fuelAvgLine={id:'fuelAvgLine',afterDatasetsDraw(ch){
+    const ctx=ch.ctx,y=ch.scales.y,ca=ch.chartArea; if(!ca) return;
+    const yp=y.getPixelForValue(fuelAvg);
+    ctx.save(); ctx.beginPath(); ctx.setLineDash([5,4]); ctx.strokeStyle='#2b2f36'; ctx.lineWidth=1.4;
+    ctx.moveTo(ca.left,yp); ctx.lineTo(ca.right,yp); ctx.stroke();
+    ctx.setLineDash([]); ctx.font='600 9px system-ui,sans-serif'; ctx.fillStyle='#2b2f36';
+    ctx.textAlign='left'; ctx.textBaseline='bottom';
+    ctx.fillText('avg',ca.right+2,yp+1);
+    ctx.restore();
+  }};
   const fe=lu.fuelEdges||[0,10,20,30,40,50,60,70,80,90,100];
   mk('chLubeFuel',{type:'bar',data:{labels:fh.map((_,i)=>fe[i]+'-'+fe[i+1]),datasets:[
     {label:'events',data:fh,backgroundColor:fh.map((_,i)=>fe[i]<8?'#e23b32':(fe[i]<40?'#1f9e8b':'#9aa0ab'))}
-  ]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:12}},plugins:{legend:{display:false},tooltip:{callbacks:{title:c=>c[0].label+'% fuel',label:c=>c.parsed.y+' events ('+Math.round(c.parsed.y/fhTot*100)+'% of day)'}}},scales:{x:{ticks:{font:{size:9}}},y:{title:{display:true,text:'events'},ticks:{font:{size:10}}}}},plugins:[fuelPct]});
+  ]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:12,right:28}},plugins:{legend:{display:false},tooltip:{callbacks:{title:c=>c[0].label+'% fuel',label:c=>c.parsed.y+' events ('+Math.round(c.parsed.y/fhTot*100)+'% of day)'}}},scales:{x:{ticks:{font:{size:9}}},y:{title:{display:true,text:'events'},ticks:{font:{size:10}}}}},plugins:[fuelPct,fuelAvgLine]});
 }
 const AVMET=[['PA','PA','bPA'],['UA','UA','bUA'],['OE','OE','bOE'],['POE','POE',null]];
 function sparkCycle(hourly){   // avg truck cycle time (mm:ss) per hour for a shovel→dump lane, with grid + point labels
