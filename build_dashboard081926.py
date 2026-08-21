@@ -2893,15 +2893,16 @@ function waterfallSVG(o){
   const AN='#41419e',GN='#6aa84f',RD='#cc4b4b';
   const rows=o.rows;
   const cum=[o.startVal]; rows.forEach(r=>cum.push(cum[cum.length-1]+r.delta));
-  const allv=[o.startVal,o.endVal,...cum];
+  const base=0;
+  const allv=[base,o.startVal,o.endVal,...cum];
   let lo=Math.min(...allv),hi=Math.max(...allv);const span=(hi-lo)||1; lo-=span*0.10; hi+=span*0.06;
   const W=1000,xKPI=182,xUOM=214,xTgt=286,xAct=340,LX=352,RX=990;
   const hdrH=24,rowH=25,barH=16,top=hdrH,n=rows.length+2,plotBot=top+n*rowH,H=plotBot+28;
   const X=v=>LX+(v-lo)/(hi-lo)*(RX-LX),rowY=i=>top+i*rowH,cyOf=i=>rowY(i)+rowH/2+4;
-  const items=[{kind:'anchor',label:o.startLabel,a:lo,b:o.startVal,end:o.startVal,color:AN,val:o.startVal}];
+  const items=[{kind:'anchor',label:o.startLabel,a:base,b:o.startVal,end:o.startVal,color:AN,val:o.startVal}];
   rows.forEach((r,j)=>items.push({kind:'step',label:r.label,col:r.col||null,segs:r.segs||null,a:cum[j],b:cum[j+1],end:cum[j+1],
     color:r.color||(r.delta>=0?GN:RD),delta:r.delta}));
-  items.push({kind:'anchor',label:o.endLabel,a:lo,b:o.endVal,end:o.endVal,color:AN,val:o.endVal});
+  items.push({kind:'anchor',label:o.endLabel,a:base,b:o.endVal,end:o.endVal,color:AN,val:o.endVal});
   const GL='#e3e6eb';   // gridline / header colour
   let g='';
   // white plot background (matches the rest of the page)
