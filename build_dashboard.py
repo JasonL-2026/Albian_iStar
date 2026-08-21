@@ -32,24 +32,36 @@ WF_ROWS=['Payload','Load','Queue','Spot','DumpIdle','Dumping','FullHaul','EmptyH
 LM_KEY={'Load':'Load','Queue':'Queue','Spot':'Spot','DumpIdle':'DumpIdle','Dumping':'Dumping','FullHaul':'Full','EmptyHaul':'Empty'}
 
 # Metadata for waterfall-priority summary (Recommendations tab)
-_WF_PRIO_META={
-    'FullHaul':  {'label':'Full Haul',        'tab':'haulage', 'kpis':'Avg Full Haul Duration vs. haul-curve; path speed compliance'},
-    'EmptyHaul': {'label':'Empty Haul',        'tab':'haulage', 'kpis':'Avg Empty Haul Duration vs. expected; return-leg speed'},
-    'DumpIdle':  {'label':'Dump Idle / Queue', 'tab':'trucks',  'kpis':'Avg QueueTimeDmp vs. budget; crusher/dump PA & UA'},
-    'Dumping':   {'label':'Dumping Time',      'tab':'trucks',  'kpis':'Avg DumpingTime vs. budget'},
-    'Queue':     {'label':'Queue at Shovel',   'tab':'loading', 'kpis':'Avg QueueTimeShvl vs. budget; truck-match ratio'},
-    'Spot':      {'label':'Spot Time',         'tab':'loading', 'kpis':'Avg SpotTime vs. budget; face geometry coaching'},
-    'Load':      {'label':'Loading Time',      'tab':'loading', 'kpis':'Avg LoadingTime vs. budget; dig rate vs. TPNOH'},
-    'Payload':   {'label':'Payload Variance',  'tab':'shovprod','kpis':'Avg weighed payload vs. 361 t target; 10-10-20 rule compliance'},
+# Truck waterfall row keys
+_WF_PRIO_META_TRUCKS={
+    'FullHaul':  {'label':'Trucks — Full Haul',        'tab':'haulage', 'kpis':'Avg Full Haul Duration vs. haul-curve; path speed compliance'},
+    'EmptyHaul': {'label':'Trucks — Empty Haul',        'tab':'haulage', 'kpis':'Avg Empty Haul Duration vs. expected; return-leg speed'},
+    'DumpIdle':  {'label':'Trucks — Dump Idle / Queue', 'tab':'trucks',  'kpis':'Avg QueueTimeDmp vs. budget; crusher/dump PA & UA'},
+    'Dumping':   {'label':'Trucks — Dumping Time',      'tab':'trucks',  'kpis':'Avg DumpingTime vs. budget'},
+    'Queue':     {'label':'Trucks — Queue at Shovel',   'tab':'loading', 'kpis':'Avg QueueTimeShvl vs. budget; truck-match ratio'},
+    'Spot':      {'label':'Trucks — Spot Time',         'tab':'loading', 'kpis':'Avg SpotTime vs. budget; face geometry coaching'},
+    'Load':      {'label':'Trucks — Loading Time',      'tab':'loading', 'kpis':'Avg LoadingTime vs. budget; dig rate vs. TPNOH'},
+    'Payload':   {'label':'Trucks — Payload Variance',  'tab':'shovprod','kpis':'Avg weighed payload vs. 361 t target; 10-10-20 rule compliance'},
+}
+# Shovel waterfall row keys (shovelWF2.rows + availDecomp)
+_WF_PRIO_META_SHOVELS={
+    'Hang':    {'label':'Shovels — Hang Time',       'tab':'shovel2', 'kpis':'Avg Hang Time vs. budget; truck-match ratio; queuing discipline'},
+    'Spot':    {'label':'Shovels — Spot at Shovel',  'tab':'shovel2', 'kpis':'Avg Spot Time vs. budget; face preparation & truck approach'},
+    'Load':    {'label':'Shovels — Load Time',       'tab':'shovel2', 'kpis':'Avg Load Time vs. budget; dig rate vs. TPNOH'},
+    'Payload': {'label':'Shovels — Payload',         'tab':'shovel2', 'kpis':'Avg payload vs. 361 t target; 10-10-20 rule compliance'},
+    '_PA':     {'label':'Shovels — PA (Availability)','tab':'shovel2','kpis':'Shovel PA vs. budget; scheduled & unscheduled downtime'},
+    '_UA':     {'label':'Shovels — UA (Standby)',    'tab':'shovel2', 'kpis':'Shovel UA vs. budget; standby & operator delay hours'},
+    '_OE':     {'label':'Shovels — OE (Utilisation)','tab':'shovel2','kpis':'Shovel OE vs. budget; operational efficiency & delay events'},
 }
 _WF_PRIO_THRESH=7500  # minimum |delta_t| to include in summary
 _REC_WINDOW_SHIFTS=14
 
-def compute_wf_priority_summary(wf, shift_count=1):
+def compute_wf_priority_summary(wf, swf=None, shift_count=1):
     """Build a ranked waterfall-gap summary for the Recommendations tab.
 
     Args:
-        wf: trucksWF dict (must have 'rows', 'potential', 'actual' keys)
+        wf:  trucksWF dict (must have 'rows', 'potential', 'actual' keys)
+        swf: shovelWF2 dict (optional; adds shovel cycle rows + availDecomp entries)
         shift_count: number of shifts aggregated (1 = per-shift, 14 = rolling window)
 
     Returns a dict:
@@ -57,13 +69,14 @@ def compute_wf_priority_summary(wf, shift_count=1):
     Each item: {component, key, delta_t, priority, tab, kpis}
     priority: 1=High (|loss|>50k), 2=Medium (15k–50k), 3=Low (7.5k–15k)
     """
-    rows=wf.get('rows',{}); potential=wf.get('potential',0); actual=wf.get('actual',0)
+    potential=wf.get('potential',0) if wf else 0
+    actual=wf.get('actual',0) if wf else 0
     losses=[]; gains=[]
-    for key,meta in _WF_PRIO_META.items():
-        delta=rows.get(key)
-        if delta is None: continue
+
+    def _add(key, meta, delta):
+        if delta is None: return
         delta_t=round(delta); abs_t=abs(delta_t)
-        if abs_t<_WF_PRIO_THRESH: continue
+        if abs_t<_WF_PRIO_THRESH: return
         item={'component':meta['label'],'key':key,'delta_t':delta_t,'tab':meta['tab'],'kpis':meta['kpis']}
         if delta_t<0:
             item['priority']=1 if abs_t>50000 else (2 if abs_t>15000 else 3)
@@ -71,6 +84,26 @@ def compute_wf_priority_summary(wf, shift_count=1):
         else:
             item['priority']=0   # gains have no priority colour — shown separately
             gains.append(item)
+
+    # --- truck waterfall rows ---
+    if wf:
+        rows=wf.get('rows',{})
+        for key,meta in _WF_PRIO_META_TRUCKS.items():
+            _add(key, meta, rows.get(key))
+
+    # --- shovel waterfall rows + availDecomp ---
+    if swf:
+        srows=swf.get('rows',{})
+        for key,meta in _WF_PRIO_META_SHOVELS.items():
+            if key.startswith('_'):
+                # availability decomposition: _PA → pa, _UA → ua, _OE → oe
+                av=swf.get('availDecomp')
+                if av:
+                    ak=key[1:].lower()   # '_PA' → 'pa'
+                    _add(key, meta, av.get(ak,{}).get('t'))
+            else:
+                _add(key, meta, srows.get(key))
+
     losses.sort(key=lambda x:x['delta_t'])   # largest loss first (most negative)
     gains.sort(key=lambda x:-x['delta_t'])   # largest gain first
     return {'losses':losses,'gains':gains,
@@ -1876,7 +1909,7 @@ def build_shift(sm):
         vw['fleetMatch']=agg_fleetMatch(pits,vw['trucksWF'],vw['shovelWF2'],vw['truckBalance'])
         vw['opDeployed']=agg_ophourly(pits)
         vw['shiftRecs']=compute_shift_recommendations(pits,fx,loads,t1)
-        vw['wfPrioritySummary']={'perShift':compute_wf_priority_summary(vw['trucksWF']),'last14':None}
+        vw['wfPrioritySummary']={'perShift':compute_wf_priority_summary(vw['trucksWF'],swf=vw.get('shovelWF2')),'last14':None}
         vw['recommendationProdWF']={'last14':None}
         views[name]=vw
     # ---------- appendix: all target / budget numbers used, for this shift ----------
@@ -1963,7 +1996,7 @@ for vn in _VPITS:
         twf=merge_wf_period([byShift[wsid]['views'][vn].get('trucksWF') for wsid in window])
         swf=merge_wf_period([byShift[wsid]['views'][vn].get('shovelWF2') for wsid in window])
         if v.get('wfPrioritySummary'):
-            v['wfPrioritySummary']['last14']=compute_wf_priority_summary(twf,shift_count=len(window)) if twf else None
+            v['wfPrioritySummary']['last14']=compute_wf_priority_summary(twf,swf=swf,shift_count=len(window)) if twf else None
         v['recommendationProdWF']={'last14':{'trucksWF':twf,'shovelWF2':swf,'shiftCount':len(window)}}
 
 out={'meta':{'generated':datetime.datetime.now().strftime('%Y-%m-%d %H:%M'),'payloadTarget':PAYLOAD_TARGET},
