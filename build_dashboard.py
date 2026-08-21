@@ -808,6 +808,7 @@ def build_shift(sm):
         psum=defaultdict(lambda:[0.0,0])
         for r in loads:
             if r['LoadPit'] not in pits: continue
+            if (r['DumpLocation'] or '').upper().startswith('IN'): continue   # match truck-waterfall exclusion of internal roads/berms/pads
             s=stype(r['Excav'])
             if not s: continue
             mat=r['MaterialGroupName']; T=num(r['Tonnage'])
@@ -827,6 +828,7 @@ def build_shift(sm):
         tot=newacc(); bymat=defaultdict(newacc); byunit=defaultdict(newacc); umeta={}; umat=defaultdict(lambda:defaultdict(float))
         for r in loads:
             if r['LoadPit'] not in pits: continue
+            if (r['DumpLocation'] or '').upper().startswith('IN'): continue   # match truck-waterfall exclusion of internal roads/berms/pads
             s=stype(r['Excav'])
             if not s: continue
             mat=r['MaterialGroupName']; T=num(r['Tonnage']); key=(s,r['LoadPit'],mat)
