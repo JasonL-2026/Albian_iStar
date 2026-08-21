@@ -4351,8 +4351,8 @@ function renderRecommendations(){
   const twf=wfPrioMode==='last14' ? (prodPeriod?prodPeriod.trucksWF:null) : (V()&&V().trucksWF);
   const swf=wfPrioMode==='last14' ? (prodPeriod?prodPeriod.shovelWF2:null) : (V()&&V().shovelWF2);
   h+=`<hr style="margin:18px 0 14px;border:none;border-top:1px solid #dde1e8">`;
-  h+=`<h3 style="margin:0 0 4px;font-size:15px;color:#344">Productivity Waterfall Summary</h3>`;
-  h+=`<p style="margin:0 0 12px;font-size:10px;color:var(--muted)">Combined bridge from Scheduled Potential to Actual across both Trucks and Shovels for the active <b>${view}</b> toggle selection (${wfPrioMode==='last14'?`last ${prodShiftCount} shifts`:'this shift'}). Potential is the higher (unconstrained) fleet potential, while a Non-Productive row closes any accounting gap.</p>`;
+  h+=`<h3 style="margin:0 0 4px;font-size:17.25px;color:#344">Productivity Waterfall Summary</h3>`;
+  h+=`<p style="margin:0 0 12px;font-size:11.5px;color:var(--muted)">Combined bridge from Scheduled Potential to Actual across both Trucks and Shovels for the active <b>${view}</b> toggle selection (${wfPrioMode==='last14'?`last ${prodShiftCount} shifts`:'this shift'}). Potential is the higher (unconstrained) fleet potential, while a Non-Productive row closes any accounting gap.</p>`;
   if(!twf&&!swf){
     h+='<div class="foot">No waterfall data available for this view.</div>';
   } else {
@@ -4361,7 +4361,7 @@ function renderRecommendations(){
     const combPot=Math.max(tPot,sPot);
     const combAct=twf?twf.actual:(swf?swf.actual:0);
     const combGap=combAct-combPot, gSign=combGap>=0?'+':'';
-    h+=`<h4 class="mini" style="margin-top:4px">Trucks &amp; Shovels &mdash; Scheduled Potential&nbsp;${fmt(combPot)}&nbsp;t &rarr; Actual&nbsp;${fmt(combAct)}&nbsp;t (gap&nbsp;${gSign}${fmt(combGap)}&nbsp;t)</h4>`;
+    h+=`<h4 class="mini" style="margin-top:4px;font-size:13.8px">Trucks &amp; Shovels &mdash; Scheduled Potential&nbsp;${fmt(combPot)}&nbsp;t &rarr; Actual&nbsp;${fmt(combAct)}&nbsp;t (gap&nbsp;${gSign}${fmt(combGap)}&nbsp;t)</h4>`;
     h+=buildCombinedProductivityWF(twf,swf);
   }
 
