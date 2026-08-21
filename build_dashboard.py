@@ -115,7 +115,6 @@ for _r in tad_all:   # tolerate the 'd'-prefixed export schema (dShiftId, dDumpL
         if len(_k)>=2 and _k[0]=='d' and _k[1].isupper(): _r.setdefault(_k[1:], _r[_k])
 lube_all=load_csv('TruckAtLubeLand.csv')
 fuel_assign_all=load_csv('SystemVsManualFuelAssignments.csv')
-truck_assign_all=load_csv('SystemVsManualAssignments.csv')
 def _lube_ok(r):   # ignore FUEL&LUBE / FUEL BREAK events under 20 s (counted separately)
     return not (r['Reason'] in ('FUEL&LUBE','FUEL BREAK') and num(r['Duration'])<20)
 def lube_trend(pits):   # cross-shift (all shifts) lube minutes by reason + expected, filtered by pit
@@ -503,22 +502,9 @@ def build_shift(sm):
         fuelAssign={'system':fa_sys_n,'manual':fa_man_n,'total':fa_tot,
                     'sysPct':round(fa_sys_n/fa_tot*100) if fa_tot else 0,
                     'manPct':round(fa_man_n/fa_tot*100) if fa_tot else 0}
-        # ---- truck assignment automation (System vs Manual/Dispatcher, all pits) ----
-        ta=[r for r in truck_assign_all if r.get('ShiftID')==sid]
-        ta_sys=[r for r in ta if r.get('AssignType')=='System Assign']
-        ta_man_raw=[r for r in ta if r.get('AssignType') in ('Dispatcher Assign','Reassign')]
-        ta_man_latest={}
-        for r in ta_man_raw:
-            tk=r.get('Truck',''); ts=_dtp(r.get('TIMESTAMP',''))
-            if tk and ts and (tk not in ta_man_latest or ts>ta_man_latest[tk][1]):
-                ta_man_latest[tk]=(r,ts)
-        ta_sys_n=len(ta_sys); ta_man_n=len(ta_man_latest); ta_tot=ta_sys_n+ta_man_n
-        truckAssign={'system':ta_sys_n,'manual':ta_man_n,'total':ta_tot,
-                     'sysPct':round(ta_sys_n/ta_tot*100) if ta_tot else 0,
-                     'manPct':round(ta_man_n/ta_tot*100) if ta_tot else 0}
         return {'reasons':reasons,'fuelHist':hist,'fuelEdges':FEDGES,'faulty':faulty,'zero':zero,'shortCount':short,
                 'leaderboard':leaderboard,'byClass':byClass,'n':len(Lv),'hourly':hourly,
-                'faultySensor':faultySensor,'fuelAssign':fuelAssign,'truckAssign':truckAssign}
+                'faultySensor':faultySensor,'fuelAssign':fuelAssign}
 
     # ---- aggregators (close over the shift locals) ----
     def agg_haul(pits):
@@ -2666,7 +2652,7 @@ function renderLube(){
   }
   // ---- assignment automation (System vs Manual) ----
   {
-    const fa=lu.fuelAssign||{}, ta=lu.truckAssign||{};
+    const fa=lu.fuelAssign||{};
     const bar=(pct,color)=>`<div style="display:inline-block;width:${pct}%;height:12px;background:${color};border-radius:2px;vertical-align:middle"></div>`;
     let ht='<table class="lanetab">';
     ht+=`<tr><th>Metric</th><th>System</th><th>Manual</th><th>Total</th><th style="min-width:120px">System %</th></tr>`;
@@ -2676,13 +2662,7 @@ function renderLube(){
     }else{
       ht+=`<tr><td colspan="5" class="foot">No fuel assignment data for this shift/view.</td></tr>`;
     }
-    if(ta.total>0){
-      ht+=`<tr><td>Truck Assignments</td><td>${ta.system}</td><td>${ta.manual}</td><td>${ta.total}</td>`;
-      ht+=`<td>${bar(ta.sysPct,'#1f9e8b')}${bar(ta.manPct,'#e0952a')} <b>${ta.sysPct}%</b> system</td></tr>`;
-    }else{
-      ht+=`<tr><td colspan="5" class="foot">No truck assignment data for this shift/view.</td></tr>`;
-    }
-    ht+='</table><div class="foot" style="margin-top:4px">Fuel Assignments: System vs Dispatcher (manual deduplicated to most recent per truck). Truck Assignments: System Assign vs Dispatcher/Reassign (most recent per truck).</div>';
+    ht+='</table><div class="foot" style="margin-top:4px">Fuel Assignments: System vs Dispatcher (manual deduplicated to most recent per truck).</div>';
     document.getElementById('lubeAssignAuto').innerHTML=ht;
   }
   if(typeof Chart==='undefined')return;
