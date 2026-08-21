@@ -4,6 +4,15 @@ REM  Albian Mine Haulage Dashboard - one-click updater (Windows)
 REM  Double-click after refreshing the CSVs in Data\ and Budget\.
 REM  Regenerates Haulage_Dashboard.html. No admin rights needed.
 REM
+REM  Usage:
+REM    Double-click (or run with no args) — build once and exit.
+REM    Run with /watch                    — rebuild every 5 minutes.
+REM    Run with /auto                     — build once, no "press any key" pause
+REM                                         (used by Windows Task Scheduler).
+REM
+REM  Cron-equivalent via Task Scheduler:
+REM    schtasks /create /tn "AlbianDashboard" /tr "\"<path>\Update Dashboard.bat\" /auto" /sc MINUTE /mo 5 /f
+REM
 REM  If it can't find Python: open build_dashboard_windows.py in
 REM  VS Code, run   import sys; print(sys.executable)   copy the
 REM  path it prints, and paste it into a text file named
@@ -12,8 +21,12 @@ REM ============================================================
 setlocal
 cd /d "%~dp0"
 REM Pass /auto (used by Task Scheduler) to skip the "press any key" prompts.
+REM Pass /watch to rebuild every 5 minutes in a loop.
 set "NOPAUSE="
+set "WATCHMODE="
 if /i "%~1"=="/auto" set "NOPAUSE=1"
+if /i "%~1"=="/watch" set "WATCHMODE=1"
+
 echo.
 echo Updating Albian Mine Haulage Dashboard...
 echo Folder: %~dp0
@@ -62,6 +75,22 @@ if not defined PYEXE (
 
 echo Using Python: %PYEXE%
 echo.
+
+if defined WATCHMODE (
+  echo Watch mode: rebuilding every 5 minutes. Close this window to stop.
+  echo.
+  :watchloop
+  echo %DATE% %TIME%  Building dashboard...
+  "%PYEXE%" "%~dp0build_dashboard_windows.py"
+  if errorlevel 1 (
+    echo   Build FAILED - see the messages above.
+  ) else (
+    echo   Done. Haulage_Dashboard.html updated.
+  )
+  TIMEOUT /T 300 /NOBREAK >nul
+  goto watchloop
+)
+
 "%PYEXE%" "%~dp0build_dashboard_windows.py"
 if errorlevel 1 (
   echo.

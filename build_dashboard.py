@@ -1620,6 +1620,157 @@ def build_shift(sm):
         return {'hours':[f"{(base+i)%24:02d}" for i in range(12)],
                 'trucks':_tr(gohHr),'shovels':_sh(gohHr),'trucksP':_tr(nohHr),'shovelsP':_sh(nohHr),
                 'cable':_g(gohHr,'Cable shovel'),'hydraulic':_g(gohHr,'Hydraulic shovel')}
+
+    def compute_shift_recommendations(pits, fx_data, all_loads, t1_loads):
+        """Compute cycle-component and balance gap recommendations for one view (pit subset).
+
+        Returns a list of dicts sorted by estimated tonnes-at-risk (highest first). Each dict:
+          {priority, area, measure, actual_s, baseline_s, actual_label, baseline_label,
+           gap_label, tonnes_at_risk, tab, detail}
+        priority: 1 (High) / 2 (Medium) / 3 (Low) matching JS colour coding.
+        """
+        # --- helpers ---
+        def _avg(seq):
+            s=[x for x in seq if x is not None]; return sum(s)/len(s) if s else 0.0
+        def _fmts(sec):
+            m=int(abs(sec))//60; s=int(abs(sec))%60
+            return ('-' if sec<0 else '')+f"{m}:{s:02d}"
+        def _priority(frac_cycle):
+            if frac_cycle>0.10: return 1
+            if frac_cycle>0.05: return 2
+            return 3
+
+        rs=[r for r in all_loads if r['LoadPit'] in pits and not r['DumpLocation'].startswith('IN')]
+        t1r=[r for r in t1_loads if r['LoadPit'] in pits and not r['DumpLocation'].startswith('IN')]
+        if not t1r: return []
+
+        # avg full truck cycle (all 8 components)
+        _cyc_keys=['EmptyHaulDuration','SpotTime','LoadingTime','QueueTimeShvl',
+                   'FullHaulDuration','QueueTimeDmp','DumpSpotTime','DumpingTime']
+        cyc_vals=[sum(num(r[k]) for k in _cyc_keys) for r in t1r]
+        avg_cycle=_avg(cyc_vals) or 1.0
+        shift_tonnes=sum(num(r['Tonnage']) for r in t1r)
+
+        recs=[]
+        def _add(measure, area, actual_s, baseline_s, tab, detail):
+            gap_s=actual_s-baseline_s
+            if gap_s<=0: return  # at or under budget — no recommendation
+            tonnes_at_risk=round(gap_s/avg_cycle*shift_tonnes)
+            frac=gap_s/avg_cycle
+            recs.append({
+                'priority':_priority(frac),
+                'area':area,
+                'measure':measure,
+                'actual_s':round(actual_s,1),
+                'baseline_s':round(baseline_s,1),
+                'actual_label':_fmts(actual_s),
+                'baseline_label':_fmts(baseline_s),
+                'gap_label':'+'+_fmts(gap_s),
+                'tonnes_at_risk':tonnes_at_risk,
+                'tab':tab,
+                'detail':detail,
+            })
+
+        # --- 1. Full Haul vs haul-curve expected ---
+        fh_gaps=[num(r['FullHaulDuration'])-num(r['FullExpectedDuration'])
+                 for r in t1r if num(r['FullHaulDuration'])>0 and num(r['FullExpectedDuration'])>0]
+        avg_fh_actual=_avg([num(r['FullHaulDuration']) for r in t1r if num(r['FullHaulDuration'])>0])
+        avg_fh_expected=_avg([num(r['FullExpectedDuration']) for r in t1r if num(r['FullExpectedDuration'])>0])
+        if fh_gaps and _avg(fh_gaps)>30:
+            _add('Full Haul Duration','Haulage (Trucks)',avg_fh_actual,avg_fh_expected,'haulage',
+                 'Loaded travel running over haul-curve target. Check road conditions, speed compliance, routing.')
+
+        # --- 2. Empty Haul vs expected ---
+        eh_gaps=[num(r['EmptyHaulDuration'])-num(r['EmptyExpectedDuration'])
+                 for r in t1r if num(r['EmptyHaulDuration'])>0 and num(r['EmptyExpectedDuration'])>0]
+        avg_eh_actual=_avg([num(r['EmptyHaulDuration']) for r in t1r if num(r['EmptyHaulDuration'])>0])
+        avg_eh_expected=_avg([num(r['EmptyExpectedDuration']) for r in t1r if num(r['EmptyExpectedDuration'])>0])
+        if eh_gaps and _avg(eh_gaps)>30:
+            _add('Empty Haul Duration','Haulage (Trucks)',avg_eh_actual,avg_eh_expected,'haulage',
+                 'Empty return travel running over expected. Check road surface, haul road obstructions.')
+
+        # --- 3. Shovel Hang Time vs budget ---
+        # Budget hang = budget cycle − spot_b − load_b (per pit/material; use tonnage-weighted average)
+        hang_bud_sum=0.0; hang_bud_n=0
+        for r in rs:
+            pit=r['LoadPit']; mat=r['MaterialGroupName']
+            f_mat=fx_data[pit].get(mat); s=stype(r['Excav'])
+            if not f_mat or not s: continue
+            tp=shTPNOH[pit].get((s,mat),0.0)
+            if tp<=0: continue
+            spot_b=f_mat['Spot']*60; load_b=LMIN(f_mat,SHVTYPE.get(s,'Average'))*60
+            c_b=PAYLOAD_TARGET*3600.0/tp; hang_b=max(0.0,c_b-spot_b-load_b)
+            hang_bud_sum+=hang_b; hang_bud_n+=1
+        avg_hang_actual=_avg([num(r['HangTime']) for r in rs if num(r['HangTime'])>=0])
+        avg_hang_bud=hang_bud_sum/hang_bud_n if hang_bud_n else 180.0
+        if avg_hang_actual>180 and avg_hang_actual>avg_hang_bud:
+            _add('Shovel Hang Time','Loading (Shovels)',avg_hang_actual,avg_hang_bud,'loading',
+                 'Shovels idling waiting for trucks. Fleet is under-trucked or truck assignment gaps exist.')
+
+        # --- 4. Dump Queue (QueueTimeDmp) vs budget DumpIdle ---
+        dq_bud_vals=[]
+        for r in t1r:
+            pit=r['LoadPit']; mat=r['MaterialGroupName']
+            f_mat=fx_data[pit].get(mat)
+            if f_mat: dq_bud_vals.append(f_mat['DumpIdle']*60)
+        avg_dq_actual=_avg([num(r['QueueTimeDmp']) for r in t1r])
+        avg_dq_bud=_avg(dq_bud_vals) if dq_bud_vals else 60.0
+        if avg_dq_actual>avg_dq_bud+30:
+            _add('Dump Queue Time','Dump / Crusher',avg_dq_actual,avg_dq_bud,'trucks',
+                 'Trucks queuing at dump longer than budget. Check crusher availability or truck bunching.')
+
+        # --- 5. Loading Time vs budget ---
+        lt_bud_vals=[]
+        for r in t1r:
+            pit=r['LoadPit']; mat=r['MaterialGroupName']
+            f_mat=fx_data[pit].get(mat); s=stype(r['Excav'])
+            if f_mat and s: lt_bud_vals.append(LMIN(f_mat,SHVTYPE.get(s,'Average'))*60)
+        avg_lt_actual=_avg([num(r['LoadingTime']) for r in t1r if num(r['LoadingTime'])>0])
+        avg_lt_bud=_avg(lt_bud_vals) if lt_bud_vals else 180.0
+        if avg_lt_actual>avg_lt_bud*1.10:
+            _add('Loading Time','Loading (Shovels)',avg_lt_actual,avg_lt_bud,'loading',
+                 'Average loading time exceeds budget by >10 %. Check dig face conditions and bucket fill factor.')
+
+        # --- 6. Spot Time vs budget ---
+        sp_bud_vals=[]
+        for r in t1r:
+            pit=r['LoadPit']; mat=r['MaterialGroupName']
+            f_mat=fx_data[pit].get(mat)
+            if f_mat: sp_bud_vals.append(f_mat['Spot']*60)
+        avg_sp_actual=_avg([num(r['SpotTime']) for r in t1r if num(r['SpotTime'])>0])
+        avg_sp_bud=_avg(sp_bud_vals) if sp_bud_vals else 72.0
+        if avg_sp_actual>avg_sp_bud+20:
+            _add('Spot Time','Loading (Shovels)',avg_sp_actual,avg_sp_bud,'loading',
+                 'Trucks taking longer than budget to position at shovel. Coaching on approach / face geometry.')
+
+        # --- 7. Truck-Shovel Balance (hang/queue ratio) ---
+        avg_queue_shvl=_avg([num(r['QueueTimeShvl']) for r in t1r])
+        if avg_queue_shvl>0:
+            ratio=avg_hang_actual/avg_queue_shvl
+            if ratio>2.0:
+                # encode as a gap: ratio excess expressed in hang seconds above a "balanced" target of 1.5×queue
+                balanced_hang=avg_queue_shvl*1.5
+                gap_hang=avg_hang_actual-balanced_hang
+                if gap_hang>0:
+                    tonnes_risk=round(gap_hang/avg_cycle*shift_tonnes)
+                    frac=gap_hang/avg_cycle
+                    recs.append({
+                        'priority':_priority(frac),
+                        'area':'Truck / Shovel Balance',
+                        'measure':'Hang/Queue Ratio (Under-Trucked)',
+                        'actual_s':round(avg_hang_actual,1),
+                        'baseline_s':round(balanced_hang,1),
+                        'actual_label':f"ratio {ratio:.1f}× (hang {_fmts(avg_hang_actual)}, queue {_fmts(avg_queue_shvl)})",
+                        'baseline_label':'ratio ≤ 1.5×',
+                        'gap_label':f"+{ratio-1.5:.1f}\u00d7 over balanced",
+                        'tonnes_at_risk':tonnes_risk,
+                        'tab':'balance',
+                        'detail':'Shovels idling far more than trucks queuing. Add truck(s) or re-assign to this shovel area.',
+                    })
+
+        recs.sort(key=lambda x:-x['tonnes_at_risk'])
+        return recs
+
     views={}
     for name,pits in [('MRM',['MRM']),('JPM',['JPM']),('Combined',PITS)]:
         vw={'haulage':agg_haul(pits),'loading':agg_load(pits),'truckBalance':agg_tb(pits),
@@ -1628,6 +1779,7 @@ def build_shift(sm):
                      'delaysStandby':delaysStandby(pits),'hourlyPerf':compute_hourlyPerf(pits),'shovelProd':compute_shovelProd(pits),'truckProd':compute_truckProd(pits),'shiftStats':compute_shiftStats(pits),'analytics':compute_analytics(pits)}
         vw['fleetMatch']=agg_fleetMatch(pits,vw['trucksWF'],vw['shovelWF2'],vw['truckBalance'])
         vw['opDeployed']=agg_ophourly(pits)
+        vw['shiftRecs']=compute_shift_recommendations(pits,fx,loads,t1)
         views[name]=vw
     # ---------- appendix: all target / budget numbers used, for this shift ----------
     def _oe(nohc,gohc,p): g=bud(p,gohc); return (bud(p,nohc)/g*100) if g>0 else None
@@ -3858,18 +4010,57 @@ function collectRecommendations(){
 function renderRecommendations(){
   const recs=collectRecommendations();
   const el=document.getElementById('recBody');
-  if(!recs.length){el.innerHTML='<div class="foot">All tracked measures are at or above baseline for this shift/view.</div>';return;}
   const meta={1:{label:'High priority',color:'#b3382b'},2:{label:'Medium priority',color:'#b3760f'},3:{label:'Low priority',color:'#2f7a44'}};
-  let h=`<div class="badges">`+[1,2,3].map(k=>`<span class="badge"><b style="color:${meta[k].color}">${meta[k].label}</b> ${recs.filter(r=>r.priority===k).length}</span>`).join('')+`</div>`;
-  [1,2,3].forEach(k=>{
-    const rows=recs.filter(r=>r.priority===k);
-    if(!rows.length)return;
-    h+=`<h4 class="mini">${meta[k].label}</h4><table class="lanetab"><tr><th>Area</th><th>Measure</th><th>Actual</th><th>Baseline</th><th>Gap</th><th></th></tr>`;
-    rows.forEach(r=>{
-      h+=`<tr><td>${r.area}</td><td>${r.measure}</td><td>${r.actual}</td><td>${r.baseline}</td><td style="color:${meta[k].color};font-weight:700">${r.gap}</td><td><button class="tlbtn" onclick="setTab('${r.tab}')">Open</button></td></tr>`;
+
+  // ---- Section 1: KPI Misses (existing JS-computed rows) ----
+  let h='';
+  if(!recs.length){
+    h+='<div class="foot">All tracked KPI measures are at or above baseline for this shift/view.</div>';
+  } else {
+    h+=`<h3 style="margin:0 0 6px;font-size:15px;color:#344">KPI Misses</h3>`;
+    h+=`<div class="badges">`+[1,2,3].map(k=>`<span class="badge"><b style="color:${meta[k].color}">${meta[k].label}</b> ${recs.filter(r=>r.priority===k).length}</span>`).join('')+`</div>`;
+    [1,2,3].forEach(k=>{
+      const rows=recs.filter(r=>r.priority===k);
+      if(!rows.length)return;
+      h+=`<h4 class="mini">${meta[k].label}</h4><table class="lanetab"><tr><th>Area</th><th>Measure</th><th>Actual</th><th>Baseline</th><th>Gap</th><th></th></tr>`;
+      rows.forEach(r=>{
+        h+=`<tr><td>${r.area}</td><td>${r.measure}</td><td>${r.actual}</td><td>${r.baseline}</td><td style="color:${meta[k].color};font-weight:700">${r.gap}</td><td><button class="tlbtn" onclick="setTab('${r.tab}')">Open</button></td></tr>`;
+      });
+      h+='</table>';
     });
-    h+='</table>';
-  });
+  }
+
+  // ---- Section 2: Cycle & Balance Priorities (Python-computed shiftRecs) ----
+  const sr=(V()&&V().shiftRecs)||[];
+  h+=`<hr style="margin:18px 0 14px;border:none;border-top:1px solid #dde1e8">`;
+  h+=`<h3 style="margin:0 0 4px;font-size:15px;color:#344">Cycle &amp; Balance Priorities</h3>`;
+  h+=`<p style="margin:0 0 10px;font-size:12px;color:var(--muted)">Ranked by estimated tonnes at risk this shift. Each gap = actual cycle component vs budget. Computed from raw load data.</p>`;
+  if(!sr.length){
+    h+='<div class="foot">All cycle components are within budget for this shift/view.</div>';
+  } else {
+    h+=`<div class="badges">`+[1,2,3].map(k=>`<span class="badge"><b style="color:${meta[k].color}">${meta[k].label}</b> ${sr.filter(r=>r.priority===k).length}</span>`).join('')+`</div>`;
+    [1,2,3].forEach(k=>{
+      const rows=sr.filter(r=>r.priority===k);
+      if(!rows.length)return;
+      h+=`<h4 class="mini">${meta[k].label}</h4>`;
+      h+=`<table class="lanetab"><tr><th>Area</th><th>Measure</th><th>Actual</th><th>Baseline</th><th>Gap</th><th style="text-align:right">Est. t at Risk</th><th></th></tr>`;
+      rows.forEach(r=>{
+        const tCol=meta[k].color;
+        const detail=r.detail?`<br><span style="font-size:11px;color:var(--muted)">${r.detail}</span>`:'';
+        h+=`<tr>
+          <td>${r.area}</td>
+          <td>${r.measure}${detail}</td>
+          <td style="white-space:nowrap">${r.actual_label}</td>
+          <td style="white-space:nowrap">${r.baseline_label}</td>
+          <td style="color:${tCol};font-weight:700;white-space:nowrap">${r.gap_label}</td>
+          <td style="text-align:right;font-weight:600;color:${tCol}">${(r.tonnes_at_risk||0).toLocaleString()} t</td>
+          <td><button class="tlbtn" onclick="setTab('${r.tab}')">Open</button></td>
+        </tr>`;
+      });
+      h+='</table>';
+    });
+  }
+
   el.innerHTML=h;
 }
 function renderTrends(){
@@ -4289,5 +4480,9 @@ except FileNotFoundError:
     chart_tag='<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>'
     _mode='CDN fallback (lib_chartjs.js not found)'
 HTML=HTML.replace('__CHARTJS__', chart_tag)
-open(f'{BASE}/Haulage_Dashboard.html','w',encoding='utf-8').write(HTML)
+# Atomic write: write to a temp file first, then replace — prevents the browser from
+# reading a half-written file during the 5-minute refresh cycle.
+_out=f'{BASE}/Haulage_Dashboard.html'; _tmp=_out+'.tmp'
+open(_tmp,'w',encoding='utf-8').write(HTML)
+os.replace(_tmp,_out)
 print("HTML written: %s/Haulage_Dashboard.html (%d KB)  Chart.js: %s"%(BASE,len(HTML)//1024,_mode))
