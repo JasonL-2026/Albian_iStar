@@ -2015,9 +2015,10 @@ HTML = r'''<!DOCTYPE html>
 <title>Albian Mine - Haulage Dashboard</title>
 <style>
 :root{--bg:#eef0f4;--card:#fff;--ink:#2b2f36;--muted:#7c828c;--line:#e3e6ec;
- --green:#4caf50;--red:#e23b32;--blue:#3f51b5;--purpleband:#3a3f9e;--head:#5c6470;}
+ --green:#4caf50;--red:#e23b32;--blue:#3f51b5;--purpleband:#3a3f9e;--head:#5c6470;
+ --fs-body:13px;--chart-h:240px;--chart-h-tall:280px;}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.4 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+body{margin:0;background:var(--bg);color:var(--ink);font:var(--fs-body)/1.4 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
 .wrap{width:100%;margin:0 auto;padding:8px 20px 14px}
 .topbar{display:flex;flex-direction:column;gap:8px;margin-bottom:6px}
 .title-wrap{text-align:center}
@@ -2171,7 +2172,7 @@ table.wf td.lead .ta{color:#2b2f36;font-weight:600}
 .charts{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .chartcard{background:var(--card);border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.08);padding:10px 12px;min-width:0}
 .chartcard h3{margin:0 0 8px;font-size:13px;color:#3a3f46}
-.chartwrap{position:relative;height:240px}
+.chartwrap{position:relative;height:var(--chart-h)}
 .hourrow{display:flex;gap:10px;align-items:stretch}
 .hourdetail.hidden{display:none}
 .hourdetail{flex:0 0 210px;height:240px;overflow:auto;border-left:1px solid var(--line);padding-left:9px;font-size:10px;font-variant-numeric:tabular-nums}
@@ -2566,7 +2567,7 @@ body.sb-auto .pagenav{display:flex}
     <section class="page" id="pg-lube" hidden>
       <div class="charts">
         <div class="chartcard"><h3>Fuel Level at Refuel <span class="sub" id="lusub"></span></h3><div class="chartwrap"><canvas id="chLubeFuel"></canvas></div></div>
-        <div class="chartcard"><h3>Hourly Fuel Delay — This Shift <span class="sub" id="lhsub"></span></h3><div class="chartwrap" style="height:280px"><canvas id="chLubeTrend"></canvas></div></div>
+        <div class="chartcard"><h3>Hourly Fuel Delay — This Shift <span class="sub" id="lhsub"></span></h3><div class="chartwrap" style="height:var(--chart-h-tall)"><canvas id="chLubeTrend"></canvas></div></div>
       </div>
       <div class="charts">
         <div class="chartcard widecard"><h3>Actual vs Expected by Reason</h3><div id="lubeReasons"></div></div>
@@ -4292,7 +4293,7 @@ function collectRecommendations(){
 }
 function renderRecommendations(){
   const el=document.getElementById('recBody');
-  const meta={1:{label:'High priority',color:'#b3382b'},2:{label:'Medium priority',color:'#b85c00'},3:{label:'Low priority',color:'#f0c030'}};
+  const meta={1:{label:'High priority',color:'#ff0000'},2:{label:'Medium priority',color:'#b85c00'},3:{label:'Low priority',color:'#f0c030'}};
 
   // ---- Section 0: Waterfall Priority Gaps (Python-computed, per-shift + trailing-14-shift) ----
   const wfps=(V()&&V().wfPrioritySummary)||null;
@@ -4771,8 +4772,22 @@ loadState();
 renderAll();
 applySidebar();
 initSidebarHover();
+function applyScreenScale(){
+  const w=window.innerWidth,h=window.innerHeight;
+  // Scale factor: 1.0 at 1920×1080, clamped to [0.75, 1.30]
+  const scale=Math.min(Math.max(Math.min(w/1920,h/1080),0.75),1.30);
+  const fs=Math.round(13*scale)+'px';
+  const ch=Math.round(Math.max(160,Math.min(480,h*0.22)))+'px';
+  const cht=Math.round(Math.max(180,Math.min(540,h*0.26)))+'px';
+  const r=document.documentElement.style;
+  r.setProperty('--fs-body',fs);
+  r.setProperty('--chart-h',ch);
+  r.setProperty('--chart-h-tall',cht);
+  Object.values(CHARTS).forEach(c=>{try{if(c&&c.resize)c.resize();}catch(e){}});
+}
+applyScreenScale();
 window.addEventListener('hashchange',()=>{loadState();renderAll();applySidebar();});   // back/forward + edited deep-links
-window.addEventListener('resize',posHideTab);   // keep the hide tab glued to the sidebar's right edge
+window.addEventListener('resize',()=>{posHideTab();applyScreenScale();});   // keep the hide tab glued to the sidebar's right edge
 </script></body></html>'''
 HTML=HTML.replace('__DATA__', json.dumps(out))
 # Inline Chart.js for a fully self-contained, offline / no-CDN file. Falls back to CDN if the lib is absent.
