@@ -30,6 +30,50 @@ NOH_FLOOR_S=150.0            # 2.5 min shovel-load floor
 PITS=['MRM','JPM']
 WF_ROWS=['Payload','Load','Queue','Spot','DumpIdle','Dumping','FullHaul','EmptyHaul']
 LM_KEY={'Load':'Load','Queue':'Queue','Spot':'Spot','DumpIdle':'DumpIdle','Dumping':'Dumping','FullHaul':'Full','EmptyHaul':'Empty'}
+
+# Metadata for waterfall-priority summary (Recommendations tab)
+_WF_PRIO_META={
+    'FullHaul':  {'label':'Full Haul',        'tab':'haulage', 'kpis':'Avg Full Haul Duration vs. haul-curve; path speed compliance'},
+    'EmptyHaul': {'label':'Empty Haul',        'tab':'haulage', 'kpis':'Avg Empty Haul Duration vs. expected; return-leg speed'},
+    'DumpIdle':  {'label':'Dump Idle / Queue', 'tab':'trucks',  'kpis':'Avg QueueTimeDmp vs. budget; crusher/dump PA & UA'},
+    'Dumping':   {'label':'Dumping Time',      'tab':'trucks',  'kpis':'Avg DumpingTime vs. budget'},
+    'Queue':     {'label':'Queue at Shovel',   'tab':'loading', 'kpis':'Avg QueueTimeShvl vs. budget; truck-match ratio'},
+    'Spot':      {'label':'Spot Time',         'tab':'loading', 'kpis':'Avg SpotTime vs. budget; face geometry coaching'},
+    'Load':      {'label':'Loading Time',      'tab':'loading', 'kpis':'Avg LoadingTime vs. budget; dig rate vs. TPNOH'},
+    'Payload':   {'label':'Payload Variance',  'tab':'shovprod','kpis':'Avg weighed payload vs. 361 t target; 10-10-20 rule compliance'},
+}
+_WF_PRIO_THRESH=7500  # minimum |delta_t| to include in summary
+
+def compute_wf_priority_summary(wf, shift_count=1):
+    """Build a ranked waterfall-gap summary for the Recommendations tab.
+
+    Args:
+        wf: trucksWF dict (must have 'rows', 'potential', 'actual' keys)
+        shift_count: number of shifts aggregated (1 = per-shift, 7 = weekly)
+
+    Returns a dict:
+      {'losses': [...], 'gains': [...], 'potential': int, 'actual': int, 'shiftCount': int}
+    Each item: {component, key, delta_t, priority, tab, kpis}
+    priority: 1=High (|loss|>50k), 2=Medium (15k–50k), 3=Low (7.5k–15k)
+    """
+    rows=wf.get('rows',{}); potential=wf.get('potential',0); actual=wf.get('actual',0)
+    losses=[]; gains=[]
+    for key,meta in _WF_PRIO_META.items():
+        delta=rows.get(key)
+        if delta is None: continue
+        delta_t=round(delta); abs_t=abs(delta_t)
+        if abs_t<_WF_PRIO_THRESH: continue
+        item={'component':meta['label'],'key':key,'delta_t':delta_t,'tab':meta['tab'],'kpis':meta['kpis']}
+        if delta_t<0:
+            item['priority']=1 if abs_t>50000 else (2 if abs_t>15000 else 3)
+            losses.append(item)
+        else:
+            item['priority']=0   # gains have no priority colour — shown separately
+            gains.append(item)
+    losses.sort(key=lambda x:x['delta_t'])   # largest loss first (most negative)
+    gains.sort(key=lambda x:-x['delta_t'])   # largest gain first
+    return {'losses':losses,'gains':gains,
+            'potential':round(potential),'actual':round(actual),'shiftCount':shift_count}
 CYC=['Queue','Spot','Load','Empty','Full','DumpIdle','Dumping']
 import statistics as _st
 from datetime import datetime as _dtm, timedelta as _td
@@ -1780,6 +1824,7 @@ def build_shift(sm):
         vw['fleetMatch']=agg_fleetMatch(pits,vw['trucksWF'],vw['shovelWF2'],vw['truckBalance'])
         vw['opDeployed']=agg_ophourly(pits)
         vw['shiftRecs']=compute_shift_recommendations(pits,fx,loads,t1)
+        vw['wfPrioritySummary']={'perShift':compute_wf_priority_summary(vw['trucksWF']),'weekly':None}
         views[name]=vw
     # ---------- appendix: all target / budget numbers used, for this shift ----------
     def _oe(nohc,gohc,p): g=bud(p,gohc); return (bud(p,nohc)/g*100) if g>0 else None
@@ -1854,6 +1899,19 @@ for sid in byShift:
         c=v['analytics']['cumulative']
         c['reqFuture']=round(req) if req is not None else None
         c['monthBudget']=round(mbud); c['monthActual']=round(act); c['futureShifts']=future; c['monthShifts']=total
+
+# ---- last-7-shifts waterfall priority summary (weekly view) ----
+_all_sids=sorted(byShift.keys(),reverse=True)   # most-recent first
+for vn in _VPITS:
+    last7=[s for s in _all_sids if byShift[s]['views'].get(vn) and byShift[s]['views'][vn].get('trucksWF')][:7]
+    if not last7: continue
+    agg_rows={k:sum(byShift[s]['views'][vn]['trucksWF']['rows'].get(k,0) for s in last7) for k in WF_ROWS}
+    agg_pot=sum(byShift[s]['views'][vn]['trucksWF']['potential'] for s in last7)
+    agg_act=sum(byShift[s]['views'][vn]['trucksWF']['actual'] for s in last7)
+    weekly=compute_wf_priority_summary({'rows':agg_rows,'potential':agg_pot,'actual':agg_act},shift_count=len(last7))
+    for sid in byShift:
+        v=byShift[sid]['views'].get(vn)
+        if v and v.get('wfPrioritySummary'): v['wfPrioritySummary']['weekly']=weekly
 
 out={'meta':{'generated':datetime.datetime.now().strftime('%Y-%m-%d %H:%M'),'payloadTarget':PAYLOAD_TARGET},
      'shifts':shiftlist,'defaultShift':(SHIFTS[0]['id'] if SHIFTS else None),'byShift':byShift}
@@ -3265,6 +3323,7 @@ function renderShovBox(which){
   else document.getElementById('chLoadS2').innerHTML=drawBoxPlot(a.loadbox,{axisLabel:'load time (min)',unit:' min',scale:1/60,dec:1,hideOutliers:true});
 }
 let shovAllOpen=false;   // Expand all / Contract all for the shovel-waterfall box plots
+let wfPrioMode='perShift';   // Waterfall Priority Gaps toggle: 'perShift' | 'weekly'
 function toggleShovExpand(){
   shovAllOpen=!shovAllOpen;
   Object.keys(SHOVBOX).forEach(w=>{const [sid,bid,lbl]=SHOVBOX[w];const sec=document.getElementById(sid),btn=document.getElementById(bid);
@@ -4139,8 +4198,58 @@ function renderRecommendations(){
   const el=document.getElementById('recBody');
   const meta={1:{label:'High priority',color:'#b3382b'},2:{label:'Medium priority',color:'#b3760f'},3:{label:'Low priority',color:'#2f7a44'}};
 
+  // ---- Section 0: Waterfall Priority Gaps (Python-computed, per-shift + weekly) ----
+  const wfps=(V()&&V().wfPrioritySummary)||null;
+  const wfpData=wfps?(wfps[wfPrioMode]||wfps['perShift']):null;
+  const gSign=n=>(n>=0?'+':'')+Math.round(n).toLocaleString();
+  let h='<h3 style="margin:0 0 6px;font-size:15px;color:#344">Waterfall Priority Gaps</h3>';
+  h+=`<p style="margin:0 0 10px;font-size:12px;color:var(--muted)">Waterfall components with |gap| &gt; 7,500 t vs. Potential, ranked by absolute tonnage loss. Threshold: <b>High</b> &gt;50k t · <b>Medium</b> 15k–50k t · <b>Low</b> 7.5k–15k t. Gains shown separately below.</p>`;
+  h+=`<div style="margin-bottom:10px">`+['perShift','weekly'].map(m=>{
+    const lbl=m==='perShift'?'This Shift':'Last 7 Shifts';
+    const on=wfPrioMode===m;
+    return `<button onclick="wfPrioMode='${m}';renderRecommendations()" style="margin-right:6px;padding:4px 12px;border-radius:4px;border:1px solid ${on?'#3f51b5':'#ccd'};background:${on?'#3f51b5':'#f5f7fa'};color:${on?'#fff':'#445'};font-weight:${on?'600':'400'};cursor:pointer;font-size:12px">${lbl}</button>`;
+  }).join('')+`</div>`;
+  if(!wfpData||(!wfpData.losses.length&&!wfpData.gains.length)){
+    h+='<div class="foot">No waterfall components exceed the 7,500 t threshold for this view/period.</div>';
+  } else {
+    const scLabel=wfPrioMode==='weekly'?`Last ${wfpData.shiftCount} shifts`:'This shift';
+    if(wfpData.losses.length){
+      const losBadges=[1,2,3].map(k=>{const n=wfpData.losses.filter(r=>r.priority===k).length; return n?`<span class="badge"><b style="color:${meta[k].color}">${meta[k].label}</b> ${n}</span>`:''}).join('');
+      h+=`<h4 class="mini">Losses — below Potential</h4>${losBadges}`;
+      h+=`<table class="lanetab"><tr><th>#</th><th>Component</th><th style="text-align:right">&Delta; Tonnes</th><th>Priority</th><th>Supporting KPIs</th><th></th></tr>`;
+      wfpData.losses.forEach((r,i)=>{
+        const m=meta[r.priority]||{label:'—',color:'#888'};
+        h+=`<tr>
+          <td style="color:#888;font-size:11px">${i+1}</td>
+          <td style="font-weight:600">${r.component}</td>
+          <td style="text-align:right;font-weight:700;color:${m.color};white-space:nowrap">${gSign(r.delta_t)} t</td>
+          <td><span class="badge" style="color:${m.color};background:${m.color}18;font-size:11px;white-space:nowrap">${m.label}</span></td>
+          <td style="font-size:11px;color:var(--muted)">${r.kpis}</td>
+          <td><button class="tlbtn" onclick="setTab('${r.tab}')">Open</button></td>
+        </tr>`;
+      });
+      h+='</table>';
+    }
+    if(wfpData.gains.length){
+      h+=`<h4 class="mini" style="margin-top:12px;color:#2f7a44">Above Budget — gains vs. Potential</h4>`;
+      h+=`<table class="lanetab"><tr><th>#</th><th>Component</th><th style="text-align:right">&Delta; Tonnes</th><th></th><th>Supporting KPIs</th><th></th></tr>`;
+      wfpData.gains.forEach((r,i)=>{
+        h+=`<tr>
+          <td style="color:#888;font-size:11px">${i+1}</td>
+          <td style="font-weight:600">${r.component}</td>
+          <td style="text-align:right;font-weight:700;color:#2f7a44;white-space:nowrap">${gSign(r.delta_t)} t</td>
+          <td></td>
+          <td style="font-size:11px;color:var(--muted)">${r.kpis}</td>
+          <td><button class="tlbtn" onclick="setTab('${r.tab}')">Open</button></td>
+        </tr>`;
+      });
+      h+='</table>';
+    }
+    h+=`<div class="foot" style="margin-top:8px">Potential: <b>${wfpData.potential.toLocaleString()}</b> t &rarr; Actual: <b>${wfpData.actual.toLocaleString()}</b> t &nbsp;·&nbsp; Net gap: <b>${gSign(wfpData.actual-wfpData.potential)}</b> t &nbsp;·&nbsp; ${scLabel}</div>`;
+  }
+  h+=`<hr style="margin:18px 0 14px;border:none;border-top:1px solid #dde1e8">`;
+
   // ---- Section 1: KPI Misses (existing JS-computed rows) ----
-  let h='';
   if(!recs.length){
     h+='<div class="foot">All tracked KPI measures are at or above baseline for this shift/view.</div>';
   } else {
