@@ -4248,7 +4248,7 @@ function collectRecommendations(){
 }
 function renderRecommendations(){
   const el=document.getElementById('recBody');
-  const meta={1:{label:'High priority',color:'#b3382b'},2:{label:'Medium priority',color:'#b3760f'},3:{label:'Low priority',color:'#2f7a44'}};
+  const meta={1:{label:'High priority',color:'#b3382b'},2:{label:'Medium priority',color:'#d47a00'},3:{label:'Low priority',color:'#c9a227'}};
 
   // ---- Section 0: Waterfall Priority Gaps (Python-computed, per-shift + trailing-14-shift) ----
   const wfps=(V()&&V().wfPrioritySummary)||null;
