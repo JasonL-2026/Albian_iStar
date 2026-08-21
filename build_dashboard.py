@@ -3325,7 +3325,8 @@ function waterfallSVG(o){
         if(maxc>=5){const t=r[0].length>maxc?r[0].slice(0,maxc-1)+'…':r[0];
           g+=`<text x="${cx+3}" y="${cy-0.5}" font-size="5.74" font-weight="600" fill="#fff">${t}<title>${r[0]} · ${r[1]}h</title></text>`;}
         cx+=sw;});}});
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%">${g}</svg>`;
+  const svgStyle=o.svgStyle||'width:100%';
+  return `<svg viewBox="0 0 ${W} ${H}" style="${svgStyle}">${g}</svg>`;
 }
 function buildWF(wf){
   const av=wf.availDecomp,hasAv=!!av;
@@ -3711,7 +3712,14 @@ function buildCombinedProductivityWF(twf,swf){
   const sumD=rows.reduce((s,r)=>s+r.delta,0);
   const residual=actual-potential-sumD;
   if(Math.abs(residual)>0.5)rows.push({label:'Non-Productive',delta:residual,color:'#9aa0ab'});
-  return waterfallSVG({startLabel:'Potential',startVal:potential,endLabel:'Actual',endVal:actual,rows});
+  return waterfallSVG({
+    startLabel:'Potential',
+    startVal:potential,
+    endLabel:'Actual',
+    endVal:actual,
+    rows,
+    svgStyle:'width:70%;display:block;margin:0 auto'
+  });
 }
 // Combined ranked KPI impact table for both fleets — sorted by absolute tonnage impact.
 function buildCombinedWFImpactTable(twf,swf){
@@ -4344,7 +4352,7 @@ function renderRecommendations(){
   const swf=wfPrioMode==='last14' ? (prodPeriod?prodPeriod.shovelWF2:null) : (V()&&V().shovelWF2);
   h+=`<hr style="margin:18px 0 14px;border:none;border-top:1px solid #dde1e8">`;
   h+=`<h3 style="margin:0 0 4px;font-size:15px;color:#344">Productivity Waterfall Summary</h3>`;
-  h+=`<p style="margin:0 0 12px;font-size:10px;color:var(--muted)">Combined bridge from Scheduled Potential to Actual across both Trucks and Shovels for the active <b>${view}</b> toggle selection (${wfPrioMode==='last14'?`last ${prodShiftCount} shifts`:'this shift'}). All KPI drivers are ranked by absolute tonnage impact — <span style="color:#2f7a44;font-weight:600">green&nbsp;= gain</span>, <span style="color:#b3382b;font-weight:600">red&nbsp;= loss</span>. Potential is the higher (unconstrained) fleet potential; a Non-Productive row closes any accounting gap. Click <b>Open</b> to drill into the source tab.</p>`;
+  h+=`<p style="margin:0 0 12px;font-size:10px;color:var(--muted)">Combined bridge from Scheduled Potential to Actual across both Trucks and Shovels for the active <b>${view}</b> toggle selection (${wfPrioMode==='last14'?`last ${prodShiftCount} shifts`:'this shift'}). Potential is the higher (unconstrained) fleet potential, while a Non-Productive row closes any accounting gap.</p>`;
   if(!twf&&!swf){
     h+='<div class="foot">No waterfall data available for this view.</div>';
   } else {
@@ -4355,7 +4363,6 @@ function renderRecommendations(){
     const combGap=combAct-combPot, gSign=combGap>=0?'+':'';
     h+=`<h4 class="mini" style="margin-top:4px">Trucks &amp; Shovels &mdash; Scheduled Potential&nbsp;${fmt(combPot)}&nbsp;t &rarr; Actual&nbsp;${fmt(combAct)}&nbsp;t (gap&nbsp;${gSign}${fmt(combGap)}&nbsp;t)</h4>`;
     h+=buildCombinedProductivityWF(twf,swf);
-    h+=buildCombinedWFImpactTable(twf,swf);
   }
 
   el.innerHTML=h;
