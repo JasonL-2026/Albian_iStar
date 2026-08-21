@@ -4885,7 +4885,7 @@ function renderPlaybook(){
   h+=`</div>`;
 
   el.innerHTML=h;
-}[['overview','Shift Overview',0],['recommendations','Recommendations',0],['playbook','Playbook',0],['matplace','Material Placement',0],['balance','Truck / Shovel Balance',0],['shovel2','Shovel Waterfall',0],['loading','Loading drill-down',1],['shovprod','Shovel Productivity',1],['trucks','Truck Waterfall',0],['haulage','Haulage drill-down',1],['truckflow','Truck Flow',1],['delays','Delays & Standby',1],['truckprod','Truck Productivity',1],['hourlyperf','Hourly Production',0],['lube','Fuel and Lube',0],['shiftstats','Shift Stats',0],['trends','Cross-Shift Trends',0],['appendix','Appendix',0],['sandbox','Sandbox',0]];
+const TABS=[['overview','Shift Overview',0],['recommendations','Recommendations',0],['playbook','Playbook',0],['matplace','Material Placement',0],['balance','Truck / Shovel Balance',0],['shovel2','Shovel Waterfall',0],['loading','Loading drill-down',1],['shovprod','Shovel Productivity',1],['trucks','Truck Waterfall',0],['haulage','Haulage drill-down',1],['truckflow','Truck Flow',1],['delays','Delays & Standby',1],['truckprod','Truck Productivity',1],['hourlyperf','Hourly Production',0],['lube','Fuel and Lube',0],['shiftstats','Shift Stats',0],['trends','Cross-Shift Trends',0],['appendix','Appendix',0],['sandbox','Sandbox',0]];
 let tab='overview';
 let sbAuto=true;   // sidebar auto-hides (slides off-screen) by default; hover the left edge to reveal
 function applySidebar(){document.body.classList.toggle('sb-auto',sbAuto);if(!sbAuto)document.body.classList.remove('sb-show');posHideTab();}
