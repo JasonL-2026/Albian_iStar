@@ -4724,6 +4724,9 @@ function renderTruckProd(){ buildProdTable(V().truckProd,'tp','No truck producti
 function renderPlaybook(){
   const el=document.getElementById('playbookBody');
   if(!el)return;
+  const pCol={1:'#e23b32',2:'#b85c00',3:'#e0a41f'};
+  const pLbl={1:'High',2:'Medium',3:'Low'};
+  const recs=(V()&&V().shiftRecs)||[];
   const sc=viewScores(V());
   const ana=(V()&&V().analytics)||{};
   const cumAct=(ana.cumulative&&ana.cumulative.actual)||[];
@@ -4733,6 +4736,56 @@ function renderPlaybook(){
   const fmt2=v=>(v==null?'—':Math.round(v).toLocaleString());
   const clr=v=>(v==null?'#888':v>=100?'#2f7a44':v>=90?'#b8830a':'#c0392b');
   let h='';
+
+  // =========================================================
+  // SECTION 1 — SHIFT HANDOVER & DAILY EXECUTION PLAN
+  // =========================================================
+  h+=`<div style="margin-bottom:24px">`;
+  h+=`<h3 style="margin:0 0 6px;font-size:20px;color:#2b2f36;border-bottom:2px solid #3f51b5;padding-bottom:6px">1 · Shift Handover &amp; Daily Execution Plan</h3>`;
+  h+=`<p style="margin:0 0 10px;font-size:13px;color:var(--muted)">Priority actions for the incoming shift, derived from the Recommendations analysis. Address items in order — each links to the relevant analysis tab.</p>`;
+
+  if(!recs.length){
+    h+=`<div class="foot">All cycle components are at or within budget for this view. No handover actions required.</div>`;
+  } else {
+    [1,2,3].forEach(p=>{
+      const grp=recs.filter(r=>r.priority===p);
+      if(!grp.length)return;
+      h+=`<h4 style="margin:12px 0 6px;font-size:14px;color:${pCol[p]}">${pLbl[p]}-Priority Actions</h4>`;
+      h+=`<table class="lanetab"><thead><tr>`;
+      h+=`<th style="text-align:left">Area</th><th style="text-align:left">Action Required</th>`;
+      h+=`<th style="text-align:right">Actual</th><th style="text-align:right">Budget</th>`;
+      h+=`<th style="text-align:right">Gap</th><th style="text-align:right">Tonnes at Risk</th><th></th>`;
+      h+=`</tr></thead><tbody>`;
+      grp.forEach(r=>{
+        h+=`<tr>
+          <td style="font-weight:600;white-space:nowrap;font-size:13px">${r.area}</td>
+          <td style="font-size:13px">${r.measure}: ${r.detail}</td>
+          <td style="text-align:right;font-size:13px;white-space:nowrap">${r.actual_label}</td>
+          <td style="text-align:right;font-size:13px;white-space:nowrap">${r.baseline_label}</td>
+          <td style="text-align:right;font-weight:700;color:${pCol[p]};font-size:13px;white-space:nowrap">${r.gap_label}</td>
+          <td style="text-align:right;font-weight:700;color:${pCol[p]};font-size:13px;white-space:nowrap">${r.tonnes_at_risk!=null?r.tonnes_at_risk.toLocaleString()+' t':'—'}</td>
+          <td><button class="tlbtn" onclick="setTab('${r.tab}')">Open</button></td>
+        </tr>`;
+      });
+      h+=`</tbody></table>`;
+    });
+  }
+
+  h+=`<h4 style="margin:16px 0 6px;font-size:14px;color:#344">Continuous Shift Handover Checklist</h4>`;
+  h+=`<table class="lanetab"><thead><tr><th style="text-align:left">Item</th><th style="text-align:left">Outgoing Shift Action</th><th style="text-align:left">Incoming Shift Confirm</th></tr></thead><tbody>`;
+  const handoverItems=[
+    ['Truck Assignments','Confirm current shovel–truck assignments and any re-routes','Verify assignments match current dig-face status'],
+    ['Active Faults','Log all in-progress equipment faults and ETA for repair','Review fault log; assign follow-up operator or maintenance contact'],
+    ['Cycle-Time Issues','Identify shovels or haul roads with above-budget cycle times (see actions above)','Acknowledge high-priority items and assign responsible supervisor'],
+    ['Crusher / Dump Status','Record crusher availability and any queue-bunching events this shift','Check crusher schedule; brief drivers on active dump restrictions'],
+    ['Production vs Plan','Record actual tonnage vs shift plan and cumulative position','Note gap and agree minimum rate target for the incoming shift'],
+    ['Safety & Berm Conditions','Note any road or berm repairs in progress; flag weather/visibility concerns','Walk-down or radio check on flagged areas before releasing trucks'],
+  ];
+  handoverItems.forEach(([item,out,inc])=>{
+    h+=`<tr><td style="font-weight:600;font-size:13px;white-space:nowrap">${item}</td><td style="font-size:13px">${out}</td><td style="font-size:13px">${inc}</td></tr>`;
+  });
+  h+=`</tbody></table>`;
+  h+=`</div>`;
 
   // =========================================================
   // PRODUCTION REPORTING & TRACKING ONLY
