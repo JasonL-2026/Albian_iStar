@@ -3710,7 +3710,7 @@ function buildCombinedWFImpactTable(twf,swf){
   pushDrivers(swf,'Shovels','shovel2','shovel2');
   if(!drivers.length)return '<div class="foot">No driver data.</div>';
   drivers.sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta));
-  let s=`<table class="lanetab" style="margin-top:6px"><tr><th>Driver</th><th>Budget</th><th>Actual KPI</th>`
+  let s=`<table class="lanetab" style="margin-top:6px;font-size:10px"><tr><th>Driver</th><th>Budget</th><th>Actual KPI</th>`
       +`<th style="text-align:right">&#916; Tonnes</th><th style="text-align:right">% of Gap</th><th></th></tr>`;
   drivers.forEach(d=>{
     if(d.delta===0)return;
@@ -4248,7 +4248,7 @@ function collectRecommendations(){
 }
 function renderRecommendations(){
   const el=document.getElementById('recBody');
-  const meta={1:{label:'High priority',color:'#b3382b'},2:{label:'Medium priority',color:'#d47a00'},3:{label:'Low priority',color:'#c9a227'}};
+  const meta={1:{label:'High priority',color:'#b3382b'},2:{label:'Medium priority',color:'#b85c00'},3:{label:'Low priority',color:'#f0c030'}};
 
   // ---- Section 0: Waterfall Priority Gaps (Python-computed, per-shift + trailing-14-shift) ----
   const wfps=(V()&&V().wfPrioritySummary)||null;
@@ -4272,11 +4272,11 @@ function renderRecommendations(){
       wfpData.losses.forEach((r,i)=>{
         const m=meta[r.priority]||{label:'—',color:'#888'};
         h+=`<tr>
-          <td style="color:#888;font-size:11px">${i+1}</td>
-          <td style="font-weight:600">${r.component}</td>
-          <td style="text-align:right;font-weight:700;color:${m.color};white-space:nowrap">${gSign(r.delta_t)} t</td>
-          <td><span class="badge" style="color:${m.color};background:${m.color}18;font-size:11px;white-space:nowrap">${m.label}</span></td>
-          <td style="font-size:11px;color:var(--muted)">${r.kpis}</td>
+          <td style="color:#888;font-size:13px">${i+1}</td>
+          <td style="font-weight:600;font-size:13px">${r.component}</td>
+          <td style="text-align:right;font-weight:700;color:${m.color};white-space:nowrap;font-size:13px">${gSign(r.delta_t)} t</td>
+          <td><span class="badge" style="color:${m.color};background:${m.color}18;font-size:13px;white-space:nowrap">${m.label}</span></td>
+          <td style="font-size:13px;color:var(--muted)">${r.kpis}</td>
           <td><button class="tlbtn" onclick="setTab('${r.tab}')">Open</button></td>
         </tr>`;
       });
@@ -4308,7 +4308,7 @@ function renderRecommendations(){
   const swf=wfPrioMode==='last14' ? (prodPeriod?prodPeriod.shovelWF2:null) : (V()&&V().shovelWF2);
   h+=`<hr style="margin:18px 0 14px;border:none;border-top:1px solid #dde1e8">`;
   h+=`<h3 style="margin:0 0 4px;font-size:15px;color:#344">Productivity Waterfall Summary</h3>`;
-  h+=`<p style="margin:0 0 12px;font-size:12px;color:var(--muted)">Combined bridge from Scheduled Potential to Actual across both Trucks and Shovels for the active <b>${view}</b> toggle selection (${wfPrioMode==='last14'?`last ${prodShiftCount} shifts`:'this shift'}). All KPI drivers are ranked by absolute tonnage impact — <span style="color:#2f7a44;font-weight:600">green&nbsp;= gain</span>, <span style="color:#b3382b;font-weight:600">red&nbsp;= loss</span>. Potential is the higher (unconstrained) fleet potential; a Residual row closes any accounting gap. Click <b>Open</b> to drill into the source tab.</p>`;
+  h+=`<p style="margin:0 0 12px;font-size:10px;color:var(--muted)">Combined bridge from Scheduled Potential to Actual across both Trucks and Shovels for the active <b>${view}</b> toggle selection (${wfPrioMode==='last14'?`last ${prodShiftCount} shifts`:'this shift'}). All KPI drivers are ranked by absolute tonnage impact — <span style="color:#2f7a44;font-weight:600">green&nbsp;= gain</span>, <span style="color:#b3382b;font-weight:600">red&nbsp;= loss</span>. Potential is the higher (unconstrained) fleet potential; a Residual row closes any accounting gap. Click <b>Open</b> to drill into the source tab.</p>`;
   if(!twf&&!swf){
     h+='<div class="foot">No waterfall data available for this view.</div>';
   } else {
