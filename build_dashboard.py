@@ -2407,13 +2407,6 @@ body.sb-auto .pagenav{display:flex}
       </div>
     </section>
 
-    <section class="page" id="pg-playbook" hidden>
-      <div class="section">
-        <h2>Playbook <span class="sub" id="playsub"></span></h2>
-        <div id="playbookBody"></div>
-      </div>
-    </section>
-
     <section class="page" id="pg-matplace" hidden>
       <div class="section">
         <h2>Material Placement <span class="sub" id="hcsub2"></span></h2>
@@ -4721,171 +4714,7 @@ function buildProdTable(d,k,emptyMsg){
   document.getElementById(P.body).innerHTML=s+'</table></div>';
 }
 function renderTruckProd(){ buildProdTable(V().truckProd,'tp','No truck productivity data for this view.'); }
-function renderPlaybook(){
-  const el=document.getElementById('playbookBody');
-  if(!el)return;
-  const pCol={1:'#e23b32',2:'#b85c00',3:'#e0a41f'};
-  const pLbl={1:'High',2:'Medium',3:'Low'};
-  const recs=(V()&&V().shiftRecs)||[];
-  const avail=(V()&&V().availability)||[];
-  const sc=viewScores(V());
-  const ana=(V()&&V().analytics)||{};
-  const cumAct=(ana.cumulative&&ana.cumulative.actual)||[];
-  const latestAct=cumAct.reduce((a,v)=>(v!=null?v:a),null);
-  const plan=(V()&&V().analytics&&V().analytics.cumulative&&V().analytics.cumulative.plan)||[];
-  const latestPlan=plan.length?plan[plan.length-1]:null;
-  // --- helpers ---
-  const fmt2=v=>(v==null?'—':Math.round(v).toLocaleString());
-  const pct=v=>(v==null?'—':v.toFixed(1)+'%');
-  const clr=v=>(v==null?'#888':v>=100?'#2f7a44':v>=90?'#b8830a':'#c0392b');
-  let h='';
-
-  // =========================================================
-  // SECTION 1 — SHIFT HANDOVER & DAILY EXECUTION PLAN
-  // =========================================================
-  h+=`<div style="margin-bottom:24px">`;
-  h+=`<h3 style="margin:0 0 6px;font-size:20px;color:#2b2f36;border-bottom:2px solid #3f51b5;padding-bottom:6px">1 · Shift Handover &amp; Daily Execution Plan</h3>`;
-  h+=`<p style="margin:0 0 10px;font-size:13px;color:var(--muted)">Priority actions for the incoming shift, derived from the Recommendations analysis. Address items in order — each links to the relevant analysis tab.</p>`;
-
-  if(!recs.length){
-    h+=`<div class="foot">All cycle components are at or within budget for this view. No handover actions required.</div>`;
-  } else {
-    // group by priority
-    [1,2,3].forEach(p=>{
-      const grp=recs.filter(r=>r.priority===p);
-      if(!grp.length)return;
-      h+=`<h4 style="margin:12px 0 6px;font-size:14px;color:${pCol[p]}">${pLbl[p]}-Priority Actions</h4>`;
-      h+=`<table class="lanetab"><thead><tr>`;
-      h+=`<th style="text-align:left">Area</th><th style="text-align:left">Action Required</th>`;
-      h+=`<th style="text-align:right">Actual</th><th style="text-align:right">Budget</th>`;
-      h+=`<th style="text-align:right">Gap</th><th style="text-align:right">Tonnes at Risk</th><th></th>`;
-      h+=`</tr></thead><tbody>`;
-      grp.forEach(r=>{
-        h+=`<tr>
-          <td style="font-weight:600;white-space:nowrap;font-size:13px">${r.area}</td>
-          <td style="font-size:13px">${r.measure}: ${r.detail}</td>
-          <td style="text-align:right;font-size:13px;white-space:nowrap">${r.actual_label}</td>
-          <td style="text-align:right;font-size:13px;white-space:nowrap">${r.baseline_label}</td>
-          <td style="text-align:right;font-weight:700;color:${pCol[p]};font-size:13px;white-space:nowrap">${r.gap_label}</td>
-          <td style="text-align:right;font-weight:700;color:${pCol[p]};font-size:13px;white-space:nowrap">${r.tonnes_at_risk!=null?r.tonnes_at_risk.toLocaleString()+' t':'—'}</td>
-          <td><button class="tlbtn" onclick="setTab('${r.tab}')">Open</button></td>
-        </tr>`;
-      });
-      h+=`</tbody></table>`;
-    });
-  }
-
-  // Continuous handover checklist
-  h+=`<h4 style="margin:16px 0 6px;font-size:14px;color:#344">Continuous Shift Handover Checklist</h4>`;
-  h+=`<table class="lanetab"><thead><tr><th style="text-align:left">Item</th><th style="text-align:left">Outgoing Shift Action</th><th style="text-align:left">Incoming Shift Confirm</th></tr></thead><tbody>`;
-  const handoverItems=[
-    ['Truck Assignments','Confirm current shovel–truck assignments and any re-routes','Verify assignments match current dig-face status'],
-    ['Active Faults','Log all in-progress equipment faults and ETA for repair','Review fault log; assign follow-up operator or maintenance contact'],
-    ['Cycle-Time Issues','Identify shovels or haul roads with above-budget cycle times (see actions above)','Acknowledge high-priority items and assign responsible supervisor'],
-    ['Crusher / Dump Status','Record crusher availability and any queue-bunching events this shift','Check crusher schedule; brief drivers on active dump restrictions'],
-    ['Production vs Plan','Record actual tonnage vs shift plan and cumulative position','Note gap and agree minimum rate target for the incoming shift'],
-    ['Safety & Berm Conditions','Note any road or berm repairs in progress; flag weather/visibility concerns','Walk-down or radio check on flagged areas before releasing trucks'],
-  ];
-  handoverItems.forEach(([item,out,inc])=>{
-    h+=`<tr><td style="font-weight:600;font-size:13px;white-space:nowrap">${item}</td><td style="font-size:13px">${out}</td><td style="font-size:13px">${inc}</td></tr>`;
-  });
-  h+=`</tbody></table>`;
-  h+=`</div>`;
-
-  // =========================================================
-  // SECTION 2 — EQUIPMENT AVAILABILITY
-  // =========================================================
-  h+=`<div style="margin-bottom:24px">`;
-  h+=`<h3 style="margin:0 0 6px;font-size:20px;color:#2b2f36;border-bottom:2px solid #2f7a44;padding-bottom:6px">2 · Equipment Availability — Fleet Utilisation &amp; Active Machinery</h3>`;
-
-  const fleets=Array.isArray(avail)?avail:[];
-  if(!fleets.length){
-    h+=`<div class="foot">No fleet availability data for this view.</div>`;
-  } else {
-    h+=`<p style="margin:0 0 10px;font-size:13px;color:var(--muted)">PA = Physical Availability · UA = Utilisation Availability · OE = Operational Efficiency. Green ≥ 100 % vs budget · Amber 90–99 % · Red &lt; 90 %.</p>`;
-    h+=`<table class="dstab" style="margin-bottom:12px"><thead><tr>`;
-    h+=`<th class="dsname">Fleet</th><th>Budget PA</th><th>Actual PA</th><th>Budget UA</th><th>Actual UA</th><th>Budget OE</th><th>Actual OE</th><th>≈ Active Units</th></tr></thead><tbody>`;
-    const AVLBL2={'Cable shovel':'Cable Shovel (BE 495B)','Hydraulic shovel':'Hydraulic Shovel (HIT 8000)','Cat 797':'Large Truck (Cat 797)'};
-    fleets.forEach(f=>{
-      const paRatio=f.bPA>0?(f.PA/f.bPA*100):null;
-      const uaRatio=f.bUA>0?(f.UA/f.bUA*100):null;
-      const oeRatio=f.bOE>0?(f.OE/f.bOE*100):null;
-      const metCell=(act,bud,ratio)=>`<td style="text-align:right;color:${clr(ratio)}">${act!=null?act.toFixed(1)+'%':'—'} <span style="font-size:10px;color:#888">/ ${bud!=null?bud.toFixed(1)+'%':'—'}</span></td>`;
-      h+=`<tr>
-        <td class="dsname" style="font-weight:600">${AVLBL2[f.group]||f.group||'—'}</td>
-        ${metCell(f.PA,f.bPA,paRatio)}
-        ${metCell(f.UA,f.bUA,uaRatio)}
-        ${metCell(f.OE,f.bOE,oeRatio)}
-        <td style="text-align:right">${f.deployed!=null?f.deployed.toFixed(1):'—'}</td>
-      </tr>`;
-    });
-    h+=`</tbody></table>`;
-  }
-
-  // Fleet utilisation actions
-  h+=`<h4 style="margin:10px 0 6px;font-size:14px;color:#344">Fleet Utilisation Actions</h4>`;
-  h+=`<table class="lanetab"><thead><tr><th style="text-align:left">Area</th><th style="text-align:left">Trigger</th><th style="text-align:left">Action</th></tr></thead><tbody>`;
-  const fleetActions=[
-    ['PA below budget','Physical availability &lt; budget PA','Escalate to maintenance; request accelerated repair ETA; deploy spare if available'],
-    ['UA below budget','Utilisation availability &lt; budget UA','Review standby events; reduce operator delays; confirm truck re-assignment to active shovels'],
-    ['OE below budget','Operational efficiency &lt; budget OE','Investigate delay categories (Delay & Standby tab); target top delay reason for immediate coaching or dispatch correction'],
-    ['Active unit count low','Fewer trucks/shovels than planned allocations','Check if under-maintenance, fuelling, or operator absence; request dispatch to cover gap'],
-    ['Crusher / dump bottleneck','Dump queue &gt; budget (see Priority Actions)','Reduce truck bunching: stagger departures from shovel; check crusher throughput rate'],
-  ];
-  fleetActions.forEach(([area,trigger,action])=>{
-    h+=`<tr><td style="font-weight:600;font-size:13px;white-space:nowrap">${area}</td><td style="font-size:13px">${trigger}</td><td style="font-size:13px">${action}</td></tr>`;
-  });
-  h+=`</tbody></table>`;
-  h+=`</div>`;
-
-  // =========================================================
-  // SECTION 3 — PRODUCTION REPORTING & TRACKING
-  // =========================================================
-  h+=`<div style="margin-bottom:24px">`;
-  h+=`<h3 style="margin:0 0 6px;font-size:20px;color:#2b2f36;border-bottom:2px solid #e0a41f;padding-bottom:6px">3 · Production Reporting &amp; Tracking</h3>`;
-
-  // Actual vs expected summary card
-  const actTxt=latestAct!=null?fmt2(latestAct)+' t':'—';
-  const planTxt=latestPlan!=null?fmt2(latestPlan)+' t':'—';
-  const gapVal=(latestAct!=null&&latestPlan!=null)?(latestAct-latestPlan):null;
-  const gapTxt=gapVal!=null?((gapVal>=0?'+':'')+fmt2(gapVal)+' t'):'—';
-  const gapClr=gapVal==null?'#888':gapVal>=0?'#2f7a44':'#c0392b';
-  const hSc=sc&&sc.hSc!=null?sc.hSc.toFixed(0)+'%':'—';
-  const lSc=sc&&sc.lSc!=null?sc.lSc.toFixed(0)+'%':'—';
-  h+=`<div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:16px">`;
-  [{label:'Cumulative Actual',val:actTxt,col:'#3f51b5'},{label:'Shift Plan (to now)',val:planTxt,col:'#888'},
-   {label:'Gap vs Plan',val:gapTxt,col:gapClr},{label:'Haulage Score',val:hSc,col:clr(sc&&sc.hSc)},
-   {label:'Loading Score',val:lSc,col:clr(sc&&sc.lSc)}].forEach(({label,val,col})=>{
-    h+=`<div style="background:#f4f6fa;border:1px solid #dde1e8;border-radius:8px;padding:10px 18px;min-width:140px">
-      <div style="font-size:11px;color:var(--muted);margin-bottom:4px">${label}</div>
-      <div style="font-size:22px;font-weight:700;color:${col}">${val}</div>
-    </div>`;
-  });
-  h+=`</div>`;
-
-  // Downtime log instructions
-  h+=`<h4 style="margin:10px 0 6px;font-size:14px;color:#344">Downtime Root-Cause Log — Reporting Checklist</h4>`;
-  h+=`<p style="margin:0 0 8px;font-size:13px;color:var(--muted)">For each significant downtime event this shift, confirm the following have been captured:</p>`;
-  h+=`<table class="lanetab"><thead><tr><th style="text-align:left">Field</th><th style="text-align:left">Source / Where to find it</th><th style="text-align:left">Submit to</th></tr></thead><tbody>`;
-  const reportingItems=[
-    ['Equipment ID &amp; fleet type','Delays &amp; Standby tab → unit list','Operations Coordinator — end-of-shift report'],
-    ['Downtime category','Delays &amp; Standby → Pareto (Down / Standby / Delay)','iSTAR system entry + shift log'],
-    ['Root cause &amp; description','Operator / maintenance verbal handover','Shift Supervisor sign-off'],
-    ['Duration (hours)','Delays &amp; Standby tab','Daily production summary'],
-    ['Tonnage impact estimate','Recommendations tab → Tonnes at Risk column','Operations Coordinator'],
-    ['Corrective action taken','Shift log / maintenance work order number','Maintenance planner + Shift Coordinator'],
-    ['Actual vs plan comparison','Production Reporting section above (Cumulative Actual vs Shift Plan)','Operations Coordinator — daily metrics'],
-    ['Fleet utilisation figures','Equipment Availability section above (PA / UA / OE)','Monthly KPI tracker'],
-  ];
-  reportingItems.forEach(([field,src,dest])=>{
-    h+=`<tr><td style="font-weight:600;font-size:13px">${field}</td><td style="font-size:13px">${src}</td><td style="font-size:13px">${dest}</td></tr>`;
-  });
-  h+=`</tbody></table>`;
-  h+=`<div class="foot" style="margin-top:8px">Submit completed metrics to the Operations Coordinator at shift end. High-priority items (red) require immediate escalation; do not defer to end-of-shift. Use the <button class="tlbtn" onclick="setTab('delays')">Delays tab</button> and <button class="tlbtn" onclick="setTab('recommendations')">Recommendations tab</button> for supporting data.</div>`;
-  h+=`</div>`;
-
-  el.innerHTML=h;
-const TABS=[['overview','Shift Overview',0],['recommendations','Recommendations',0],['playbook','Playbook',0],['matplace','Material Placement',0],['balance','Truck / Shovel Balance',0],['shovel2','Shovel Waterfall',0],['loading','Loading drill-down',1],['shovprod','Shovel Productivity',1],['trucks','Truck Waterfall',0],['haulage','Haulage drill-down',1],['truckflow','Truck Flow',1],['delays','Delays & Standby',1],['truckprod','Truck Productivity',1],['hourlyperf','Hourly Production',0],['lube','Fuel and Lube',0],['shiftstats','Shift Stats',0],['trends','Cross-Shift Trends',0],['appendix','Appendix',0],['sandbox','Sandbox',0]];
+const TABS=[['overview','Shift Overview',0],['recommendations','Recommendations',0],['matplace','Material Placement',0],['balance','Truck / Shovel Balance',0],['shovel2','Shovel Waterfall',0],['loading','Loading drill-down',1],['shovprod','Shovel Productivity',1],['trucks','Truck Waterfall',0],['haulage','Haulage drill-down',1],['truckflow','Truck Flow',1],['delays','Delays & Standby',1],['truckprod','Truck Productivity',1],['hourlyperf','Hourly Production',0],['lube','Fuel and Lube',0],['shiftstats','Shift Stats',0],['trends','Cross-Shift Trends',0],['appendix','Appendix',0],['sandbox','Sandbox',0]];
 let tab='overview';
 let sbAuto=true;   // sidebar auto-hides (slides off-screen) by default; hover the left edge to reveal
 function applySidebar(){document.body.classList.toggle('sb-auto',sbAuto);if(!sbAuto)document.body.classList.remove('sb-show');posHideTab();}
@@ -4907,12 +4736,11 @@ function renderPageNav(){const idx=TABS.findIndex(t=>t[0]===tab);
   const pv=document.getElementById('pgPrev'),nx=document.getElementById('pgNext'),lb=document.getElementById('pgLabel');
   if(pv)pv.disabled=idx<=0; if(nx)nx.disabled=idx>=TABS.length-1;
   if(lb)lb.textContent=(idx+1)+' / '+TABS.length+' · '+(TABS[idx]?TABS[idx][1]:'');}
-function setSubs(){['wfsub','shovsub','hcsub','ansub','owsub','lanesub','dhsub','dlsub','tlsub','avsub','avsub2','dtlsub','lhsub','lusub','hitsub','shov2sub','dssub','hpsub','spsub','tpsub','sssub','tfsub','recsub','playsub'].forEach(id=>{const e=document.getElementById(id);if(e)e.textContent='('+view+')';});}
+function setSubs(){['wfsub','shovsub','hcsub','ansub','owsub','lanesub','dhsub','dlsub','tlsub','avsub','avsub2','dtlsub','lhsub','lusub','hitsub','shov2sub','dssub','hpsub','spsub','tpsub','sssub','tfsub','recsub'].forEach(id=>{const e=document.getElementById(id);if(e)e.textContent='('+view+')';});}
 function renderTab(){
   setSubs(); renderPageNav();
   if(tab==='overview'){try{renderOverview();}catch(e){console.error(e);}}
   else if(tab==='recommendations'){try{renderRecommendations();}catch(e){console.error(e);}}
-  else if(tab==='playbook'){try{renderPlaybook();}catch(e){console.error(e);}}
   else if(tab==='trends'){try{renderTrends();}catch(e){console.error(e);}}
   else if(tab==='balance'){renderCards();}
   else if(tab==='sandbox'){try{renderSandbox();}catch(e){console.error(e);}}
