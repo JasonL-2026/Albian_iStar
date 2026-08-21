@@ -1508,13 +1508,12 @@ table.wf td.lead .ta{color:#2b2f36;font-weight:600}
     </section>
 
     <section class="page" id="pg-lube" hidden>
-      <div class="section">
-        <h2>Hourly fuel delay — this shift <span class="sub" id="lhsub"></span></h2>
-        <div class="chartwrap" style="height:280px"><canvas id="chLubeTrend"></canvas></div>
-      </div>
       <div class="charts">
         <div class="chartcard"><h3>Fuel level at refuel <span class="sub" id="lusub"></span></h3><div class="chartwrap"><canvas id="chLubeFuel"></canvas></div></div>
-        <div class="chartcard"><h3>Actual vs expected by reason</h3><div id="lubeReasons"></div></div>
+        <div class="chartcard"><h3>Hourly fuel delay — this shift <span class="sub" id="lhsub"></span></h3><div class="chartwrap" style="height:280px"><canvas id="chLubeTrend"></canvas></div></div>
+      </div>
+      <div class="charts">
+        <div class="chartcard widecard"><h3>Actual vs expected by reason</h3><div id="lubeReasons"></div></div>
       </div>
       <div class="charts">
         <div class="chartcard"><h3>Overrun leaderboard — this shift</h3><div id="lubeLead"></div></div>

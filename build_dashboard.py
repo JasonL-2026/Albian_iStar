@@ -2258,13 +2258,12 @@ body.sb-auto .pagenav{display:flex}
     </section>
 
     <section class="page" id="pg-lube" hidden>
-      <div class="section">
-        <h2>Hourly Fuel Delay — This Shift <span class="sub" id="lhsub"></span></h2>
-        <div class="chartwrap" style="height:280px"><canvas id="chLubeTrend"></canvas></div>
-      </div>
       <div class="charts">
         <div class="chartcard"><h3>Fuel Level at Refuel <span class="sub" id="lusub"></span></h3><div class="chartwrap"><canvas id="chLubeFuel"></canvas></div></div>
-        <div class="chartcard"><h3>Actual vs Expected by Reason</h3><div id="lubeReasons"></div></div>
+        <div class="chartcard"><h3>Hourly Fuel Delay — This Shift <span class="sub" id="lhsub"></span></h3><div class="chartwrap" style="height:280px"><canvas id="chLubeTrend"></canvas></div></div>
+      </div>
+      <div class="charts">
+        <div class="chartcard widecard"><h3>Actual vs Expected by Reason</h3><div id="lubeReasons"></div></div>
       </div>
       <div class="charts">
         <div class="chartcard"><h3>Overrun Leaderboard — This Shift</h3><div id="lubeLead"></div></div>
