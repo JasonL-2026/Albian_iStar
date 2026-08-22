@@ -4827,15 +4827,15 @@ function renderPlaybook(){
   if(!recs.length){
     h+=`<div class="foot">All cycle components are at or within budget for this view. No handover actions required.</div>`;
   } else {
+    h+=`<table class="lanetab" style="width:100%"><thead><tr>`;
+    h+=`<th style="text-align:left;width:160px;white-space:nowrap">Area</th><th style="text-align:left">Justification</th>`;
+    h+=`<th style="text-align:right;white-space:nowrap;min-width:100px">Actual</th><th style="text-align:right;white-space:nowrap;min-width:100px">Budget</th>`;
+    h+=`<th style="text-align:right;white-space:nowrap;min-width:100px">Gap</th><th style="text-align:right;white-space:nowrap;min-width:110px">Tonnes at Risk</th><th style="width:60px"></th>`;
+    h+=`</tr></thead><tbody>`;
     [1,2,3].forEach(p=>{
       const grp=recs.filter(r=>r.priority===p);
       if(!grp.length)return;
-      h+=`<h4 style="margin:12px 0 6px;font-size:14px;color:${pCol[p]}">${pLbl[p]}-Priority Actions</h4>`;
-      h+=`<table class="lanetab" style="width:100%"><thead><tr>`;
-      h+=`<th style="text-align:left;width:160px;white-space:nowrap">Area</th><th style="text-align:left">Justification</th>`;
-      h+=`<th style="text-align:right;white-space:nowrap;min-width:100px">Actual</th><th style="text-align:right;white-space:nowrap;min-width:100px">Budget</th>`;
-      h+=`<th style="text-align:right;white-space:nowrap;min-width:100px">Gap</th><th style="text-align:right;white-space:nowrap;min-width:110px">Tonnes at Risk</th><th style="width:60px"></th>`;
-      h+=`</tr></thead><tbody>`;
+      h+=`<tr><td colspan="7" style="font-weight:700;font-size:13px;color:${pCol[p]};padding:8px 6px 4px;background:#f8f9fb;border-top:2px solid ${pCol[p]}">${pLbl[p]}-Priority Actions</td></tr>`;
       grp.forEach(r=>{
         h+=`<tr>
           <td style="font-weight:600;white-space:nowrap;font-size:13px">${r.area}</td>
@@ -4847,8 +4847,8 @@ function renderPlaybook(){
           <td style="text-align:center"><button class="tlbtn" onclick="setTab('${r.tab}')">Open</button></td>
         </tr>`;
       });
-      h+=`</tbody></table>`;
     });
+    h+=`</tbody></table>`;
   }
 
   h+=`</div>`;
