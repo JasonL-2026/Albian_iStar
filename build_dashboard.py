@@ -3281,7 +3281,7 @@ function fillLoadDrill(){
 function toggleDrill(id){const e=document.getElementById(id);if(e)e.classList.toggle('open');}
 
 const ROWLABEL={Payload:'Payload',Load:'Load Time',Queue:'Queue at Shovel',Spot:'Spot at Shovel',
- DumpIdle:'Dump Idle',Dumping:'Dumping',FullHaul:'Full Haul',EmptyHaul:'Empty Haul',Residual:'Non-Productive'};
+ DumpIdle:'Dump Idle',Dumping:'Dumping',FullHaul:'Full Haul',EmptyHaul:'Empty Haul',Residual:'Residual'};
 const ORDER=['Payload','Load','Queue','Spot','DumpIdle','Dumping','FullHaul','EmptyHaul'];
 function fmtTime(s){const m=Math.floor(s/60),x=Math.round(s-m*60);return m+':'+(x<10?'0':'')+x;}
 function leadStr(k,lm){   // returns {uom,tgt,act} for the KPI/UOM/Target/Actual columns
@@ -3737,7 +3737,7 @@ function buildCombinedProductivityWF(twf,swf){
   rows.sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta));
   const sumD=rows.reduce((s,r)=>s+r.delta,0);
   const residual=actual-potential-sumD;
-  if(Math.abs(residual)>0.5)rows.push({label:'Non-Productive',delta:residual,color:'#9aa0ab'});
+  if(Math.abs(residual)>0.5)rows.push({label:'Residual',delta:residual,color:'#9aa0ab'});
   return waterfallSVG({
     startLabel:'Potential',
     startVal:potential,
@@ -4437,7 +4437,7 @@ function renderRecommendations(){
   }
   h+=`<h3 style="margin:0 0 4px;font-size:17.25px;color:#344">Production Waterfall</h3>`;
   const periodLabel=perCrewEntry?`Crew ${wfCrewFilter} · last ${prodShiftCount} shifts`:`last ${prodShiftCount} shifts`;
-  h+=`<p style="margin:0 0 12px;font-size:11.5px;color:var(--muted)">Combined bridge from Scheduled Potential to Actual across both Trucks and Shovels for the active <b>${view}</b> toggle selection (${periodLabel}). Potential is the higher (unconstrained) fleet potential, while a Non-Productive row closes any accounting gap.</p>`;
+  h+=`<p style="margin:0 0 12px;font-size:11.5px;color:var(--muted)">Combined bridge from Scheduled Potential to Actual across both Trucks and Shovels for the active <b>${view}</b> toggle selection (${periodLabel}). Potential is the higher (unconstrained) fleet potential, while a Residual row closes any accounting gap.</p>`;
   if(!twf&&!swf){
     h+='<div class="foot">No waterfall data available for this view.</div>';
   } else {
