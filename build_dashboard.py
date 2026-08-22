@@ -3703,37 +3703,30 @@ function buildWFImpactTable(wfType,wf){
   s+='</table>';
   return s;
 }
-// Combined shovel + truck productivity waterfall — single bridge chart ranked by absolute KPI impact.
-// start = higher (unconstrained) potential; end = actual; residual closes any accounting gap.
+// Combined productivity waterfall — uses truck potential as the single reference point
+// so that only truck KPI rows are needed and the bridge closes exactly with zero residual.
 function buildCombinedProductivityWF(twf,swf){
-  const tPot=twf?(twf.schedPotential||twf.potential):0;
-  const sPot=swf?(swf.schedPotential||swf.potential):0;
-  const potential=Math.max(tPot,sPot);
+  const potential=twf?(twf.schedPotential||twf.potential):0;
   const actual=twf?twf.actual:(swf?swf.actual:0);
   const rows=[];
-  const pushRows=(wf,prefix)=>{
-    if(!wf)return;
-    const av=wf.availDecomp;
+  if(twf){
+    const av=twf.availDecomp;
     if(av){
-      rows.push({label:prefix+' · PA',delta:av.pa.t,col:{uom:'%',tgt:av.pa.bud.toFixed(1),act:av.pa.act.toFixed(1)}});
-      rows.push({label:prefix+' · UA',delta:av.ua.t,col:{uom:'%',tgt:av.ua.bud.toFixed(1),act:av.ua.act.toFixed(1)}});
-      rows.push({label:prefix+' · OE',delta:av.oe.t,col:{uom:'%',tgt:av.oe.bud.toFixed(1),act:av.oe.act.toFixed(1)}});
+      rows.push({label:'Trucks · PA',delta:av.pa.t,col:{uom:'%',tgt:av.pa.bud.toFixed(1),act:av.pa.act.toFixed(1)}});
+      rows.push({label:'Trucks · UA',delta:av.ua.t,col:{uom:'%',tgt:av.ua.bud.toFixed(1),act:av.ua.act.toFixed(1)}});
+      rows.push({label:'Trucks · OE',delta:av.oe.t,col:{uom:'%',tgt:av.oe.bud.toFixed(1),act:av.oe.act.toFixed(1)}});
     }
-    const meta=prefix==='Trucks'
-      ?[['Payload','Payload'],['Load','Load Time'],['Queue','Queue at Shovel'],['Spot','Spot at Shovel'],
-        ['DumpIdle','Dump Idle'],['Dumping','Dumping'],['FullHaul','Full Haul'],['EmptyHaul','Empty Haul']]
-      :[['Payload','Payload'],['Spot','Spot at Shovel'],['Load','Load Time'],['Hang','Hang Time']];
-    meta.forEach(([k,lbl])=>{
-      const d=wf.rows[k]; if(d==null)return;
-      const lm=wf.lm&&wf.lm[k];
+    [['Payload','Payload'],['Load','Load Time'],['Queue','Queue at Shovel'],['Spot','Spot at Shovel'],
+     ['DumpIdle','Dump Idle'],['Dumping','Dumping'],['FullHaul','Full Haul'],['EmptyHaul','Empty Haul']]
+    .forEach(([k,lbl])=>{
+      const d=twf.rows[k]; if(d==null)return;
+      const lm=twf.lm&&twf.lm[k];
       let col=null;
       if(lm){if(lm.unit==='t')col={uom:'wTons',tgt:lm.target.toFixed(0),act:lm.actual.toFixed(0)};
              else col={uom:'mm:ss',tgt:fmtTime(lm.target),act:fmtTime(lm.actual)};}
-      rows.push({label:prefix+' · '+lbl,delta:d,col});
+      rows.push({label:'Trucks · '+lbl,delta:d,col});
     });
-  };
-  pushRows(twf,'Trucks');
-  pushRows(swf,'Shovels');
+  }
   rows.sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta));
   const sumD=rows.reduce((s,r)=>s+r.delta,0);
   const residual=actual-potential-sumD;
@@ -4437,18 +4430,16 @@ function renderRecommendations(){
   }
   h+=`<h3 style="margin:0 0 4px;font-size:17.25px;color:#344">Production Waterfall</h3>`;
   const periodLabel=perCrewEntry?`Crew ${wfCrewFilter} · last ${prodShiftCount} shifts`:`last ${prodShiftCount} shifts`;
-  h+=`<p style="margin:0 0 12px;font-size:11.5px;color:var(--muted)">Combined bridge from Scheduled Potential to Actual across both Trucks and Shovels for the active <b>${view}</b> toggle selection (${periodLabel}). Potential is the higher (unconstrained) fleet potential, while a Residual row closes any accounting gap.</p>`;
+  h+=`<p style="margin:0 0 12px;font-size:11.5px;color:var(--muted)">Truck productivity bridge from Scheduled Potential to Actual for the active <b>${view}</b> toggle selection (${periodLabel}). Potential is the truck fleet's scheduled potential; KPI rows are truck-only so the bridge closes exactly. Shovel performance is shown in the Shovels tab.</p>`;
   if(!twf&&!swf){
     h+='<div class="foot">No waterfall data available for this view.</div>';
   } else {
     const tPot=twf?(twf.schedPotential||twf.potential):0;
-    const sPot=swf?(swf.schedPotential||swf.potential):0;
-    const combPot=Math.max(tPot,sPot);
     const combAct=twf?twf.actual:(swf?swf.actual:0);
-    const combGap=combAct-combPot, gSignC=combGap>=0?'+':'';
-    h+=`<h4 class="mini" style="margin-top:4px;font-size:13.8px">Trucks &amp; Shovels &mdash; Scheduled Potential&nbsp;${fmt(combPot)}&nbsp;t &rarr; Actual&nbsp;${fmt(combAct)}&nbsp;t (gap&nbsp;${gSignC}${fmt(combGap)}&nbsp;t)</h4>`;
+    const combGap=combAct-tPot, gSignC=combGap>=0?'+':'';
+    h+=`<h4 class="mini" style="margin-top:4px;font-size:13.8px">Trucks &mdash; Scheduled Potential&nbsp;${fmt(tPot)}&nbsp;t &rarr; Actual&nbsp;${fmt(combAct)}&nbsp;t (gap&nbsp;${gSignC}${fmt(combGap)}&nbsp;t)</h4>`;
     h+=buildCombinedProductivityWF(twf,swf);
-    h+='<div class="foot" style="margin-top:8px"><b>Residual</b> is the unexplained accounting difference between Potential and Actual after all tracked KPI rows are summed. It arises from interactions between KPIs, rounding, or data not captured in the individual rows. A small residual (positive or negative) is normal; a large residual suggests a measurement gap worth investigating.</div>';
+    h+='<div class="foot" style="margin-top:8px"><b>Residual</b> is the unexplained accounting difference between truck Potential and Actual after all truck KPI rows are summed. It arises from interactions between KPIs, rounding, or data not captured in the individual rows. A small residual (positive or negative) is normal; a large residual suggests a measurement gap worth investigating.</div>';
   }
 
   el.innerHTML=h;
