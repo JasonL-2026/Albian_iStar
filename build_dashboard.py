@@ -4425,18 +4425,18 @@ function renderRecommendations(){
   }
   h+=`<hr style="margin:18px 0 14px;border:none;border-top:1px solid #dde1e8">`;
 
-  // ---- Productivity Waterfall Summary ----
+  // ---- Production Waterfall (always last 14 shifts) ----
   let twf, swf, prodShiftCount;
   if(perCrewEntry){
     twf=perCrewEntry.trucksWF; swf=perCrewEntry.shovelWF2; prodShiftCount=perCrewEntry.shiftCount;
   } else {
-    const prodPeriod=wfPrioMode==='last14' ? ((V()&&V().recommendationProdWF&&V().recommendationProdWF.last14)||null) : null;
+    const prodPeriod=(V()&&V().recommendationProdWF&&V().recommendationProdWF.last14)||null;
     prodShiftCount=prodPeriod&&prodPeriod.shiftCount ? prodPeriod.shiftCount : 1;
-    twf=wfPrioMode==='last14' ? (prodPeriod?prodPeriod.trucksWF:null) : (V()&&V().trucksWF);
-    swf=wfPrioMode==='last14' ? (prodPeriod?prodPeriod.shovelWF2:null) : (V()&&V().shovelWF2);
+    twf=prodPeriod?prodPeriod.trucksWF:null;
+    swf=prodPeriod?prodPeriod.shovelWF2:null;
   }
-  h+=`<h3 style="margin:0 0 4px;font-size:17.25px;color:#344">Productivity Waterfall Summary</h3>`;
-  const periodLabel=perCrewEntry?`Crew ${wfCrewFilter} · last ${prodShiftCount} shifts`:(wfPrioMode==='last14'?`last ${prodShiftCount} shifts`:'this shift');
+  h+=`<h3 style="margin:0 0 4px;font-size:17.25px;color:#344">Production Waterfall</h3>`;
+  const periodLabel=perCrewEntry?`Crew ${wfCrewFilter} · last ${prodShiftCount} shifts`:`last ${prodShiftCount} shifts`;
   h+=`<p style="margin:0 0 12px;font-size:11.5px;color:var(--muted)">Combined bridge from Scheduled Potential to Actual across both Trucks and Shovels for the active <b>${view}</b> toggle selection (${periodLabel}). Potential is the higher (unconstrained) fleet potential, while a Non-Productive row closes any accounting gap.</p>`;
   if(!twf&&!swf){
     h+='<div class="foot">No waterfall data available for this view.</div>';
