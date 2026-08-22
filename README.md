@@ -50,6 +50,27 @@ See [`Dashboard_Methodology.md`](Dashboard_Methodology.md) for a full specificat
 
 > **Tip:** Set the `DASH_DATADIR` environment variable to point the builder at a different data folder (e.g., a network share) without editing the script.
 
+### iSTAR SQL-backed dashboard
+
+`build_dashboard.py` also generates `iSTAR_dashboard.html`, which uses the same tabs/features but loads data at runtime from an API endpoint (`/api/dashboard-data` by default) instead of embedded local JSON.
+
+Quick start:
+
+1. Build once:
+   ```bash
+   python build_dashboard.py
+   ```
+2. Start the lightweight backend:
+   ```bash
+   python scripts/istar_sql_backend.py
+   ```
+3. Open `iSTAR_dashboard.html`.
+
+Optional runtime settings:
+- `ISTAR_API_BASE` (browser global) or `?dataUrl=...` query string to point the dashboard to a different API host.
+- `ISTAR_SQL_CONNECTION_STRING` + `ISTAR_SQL_JSON_QUERY` to have the backend read payload directly from SQL (otherwise it serves `dashboard_data.json`).
+- `DASH_SQL_MODE=1` + `DASH_SQL_CONNECTION_STRING` to have `build_dashboard.py` query SQL datasets directly using RDL references in `Data/RDLs/`.
+
 ---
 
 ## Repository Structure

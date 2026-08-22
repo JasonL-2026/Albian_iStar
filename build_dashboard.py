@@ -18,8 +18,9 @@ Locked definitions (agreed section-by-section):
                    Above Potential: Sched. Potential → PA → UA → OE rows (Cat 797 availability vs budget
                    CSV, same calc as KPI tab), each bar embeds the top Down/Standby/Delay reason.
 """
-import csv, json, datetime, os, re
+import csv, json, datetime, os, re, html
 from collections import defaultdict
+from xml.etree import ElementTree as ET
 
 # Anchor all paths to THIS script's folder, so the project works from any working directory
 # or after being copied/moved to another computer (no dependency on the current directory).
@@ -206,8 +207,93 @@ DATADIR=os.environ.get('DASH_DATADIR') or f'{BASE}/Data'   # override with DASH_
 _COLRE=re.compile(r'^Dtl_(.*?)(?:_\d+)?$')
 def _normcol(h):   # SSRS exports name columns "Dtl_<Name>_<pos>"; strip that (and BOM) → plain <Name>. Leaves plain headers unchanged.
     h=h.strip().lstrip('﻿'); m=_COLRE.match(h); return m.group(1) if m else h
+_SQL_MODE=os.environ.get('DASH_SQL_MODE','').strip().lower() in ('1','true','yes','on')
+_RDL_NS={'rdl':'http://schemas.microsoft.com/sqlserver/reporting/2008/01/reportdefinition',
+         'rdl16':'http://schemas.microsoft.com/sqlserver/reporting/2016/01/reportdefinition'}
+_SQL_SOURCE_MAP={
+    'AllLoadsDumps.csv':('AllLoadsDumps_git.rdl','dsAllLoadsDumps'),
+    'Statusevents.csv':('Statusevents_git.rdl','dsStatusevents'),
+    'TruckatShovel.csv':('TruckatShovel_git.rdl','dsTruckatShovel'),
+    'TruckAtDump.csv':('trucksatdump_git.rdl','TrucksAtDump'),
+    'TruckAtLubeLand.csv':('TruckAtLubeLand_git.rdl','dsTruckAtLubeLand'),
+    'SystemVsManualFuelAssignments.csv':('SystemVsManualFuelAssignments_git.rdl','dsSystemVsManualFuelAssignments'),
+    'TruckBalance.csv':('TruckBalance_git.rdl','dsTruckBalance'),
+}
+_RDL_CACHE={}
+_SQL_CONN=None
+
+def _sql_shift_bounds():
+    if os.environ.get('DASH_SQL_START_SHIFT') and os.environ.get('DASH_SQL_END_SHIFT'):
+        return int(os.environ['DASH_SQL_START_SHIFT']), int(os.environ['DASH_SQL_END_SHIFT'])
+    lookback=max(1,int(os.environ.get('DASH_SQL_LOOKBACK_DAYS','21')))
+    now=_dtm.now()
+    today=now.date()
+    anchor=today if now.hour>=6 else (today-_td(days=1))
+    end_seq='001' if 6<=now.hour<18 else '002'
+    start_day=anchor-_td(days=lookback)
+    return int(start_day.strftime('%y%m%d')+'001'), int(anchor.strftime('%y%m%d')+end_seq)
+
+def _rdl_root(path):
+    if path not in _RDL_CACHE:
+        _RDL_CACHE[path]=ET.parse(path).getroot()
+    return _RDL_CACHE[path]
+
+def _rdl_query_info(rdl_file, dataset_name):
+    root=_rdl_root(f'{BASE}/Data/RDLs/{rdl_file}')
+    ds=root.find(f".//{{*}}DataSet[@Name='{dataset_name}']")
+    if ds is None: raise KeyError(f'Dataset {dataset_name} not found in {rdl_file}')
+    cmd=(ds.findtext('./{*}Query/{*}CommandText') or '').strip()
+    qps=[qp.get('Name','').lstrip('@') for qp in ds.findall('./{*}Query/{*}QueryParameters/{*}QueryParameter')]
+    return html.unescape(cmd), qps
+
+def _sql_connect():
+    global _SQL_CONN
+    if _SQL_CONN is not None: return _SQL_CONN
+    conn_str=os.environ.get('DASH_SQL_CONNECTION_STRING','').strip()
+    if not conn_str:
+        raise RuntimeError('DASH_SQL_CONNECTION_STRING is required when DASH_SQL_MODE=1')
+    try:
+        import pyodbc  # optional runtime dependency in SQL mode
+    except ImportError as e:
+        raise RuntimeError('pyodbc is required for DASH_SQL_MODE=1 (install on SQL-enabled host)') from e
+    _SQL_CONN=pyodbc.connect(conn_str, timeout=30)
+    return _SQL_CONN
+
+def _sql_rows_for_csv(name):
+    if name not in _SQL_SOURCE_MAP:
+        return []
+    rdl_file,dataset_name=_SQL_SOURCE_MAP[name]
+    sql,params=_rdl_query_info(rdl_file,dataset_name)
+    start_shift,end_shift=_sql_shift_bounds()
+    pmap={'StartShift':start_shift,'EndShift':end_shift}
+    ordered=[]; bound=sql
+    for p in params:
+        bound=re.sub(rf'@{re.escape(p)}\\b','?',bound)
+        ordered.append(pmap.get(p))
+    cur=_sql_connect().cursor()
+    cur.execute(bound,*ordered)
+    cols=[c[0] for c in cur.description]
+    out=[]
+    for row in cur.fetchall():
+        rec={}
+        for i,col in enumerate(cols):
+            v=row[i]
+            if isinstance(v,datetime.datetime):
+                v=v.strftime('%m/%d/%Y %I:%M:%S %p')
+            rec[_normcol(col)]= '' if v is None else str(v)
+        out.append(rec)
+    return out
+
 def load_csv(name):
-    with open(f'{DATADIR}/{name}',encoding='utf-8-sig',newline='') as f:
+    if _SQL_MODE:
+        return _sql_rows_for_csv(name)
+    path=f'{DATADIR}/{name}'
+    if not os.path.exists(path):
+        low=name.lower()
+        for fn in os.listdir(DATADIR):
+            if fn.lower()==low:
+                path=f'{DATADIR}/{fn}'; break
+    with open(path,encoding='utf-8-sig',newline='') as f:
         rdr=csv.reader(f)
         try: hdr=[_normcol(c) for c in next(rdr)]
         except StopIteration: return []
@@ -5012,7 +5098,6 @@ applyScreenScale();
 window.addEventListener('hashchange',()=>{loadState();renderAll();applySidebar();});   // back/forward + edited deep-links
 window.addEventListener('resize',()=>{posHideTab();applyScreenScale();});   // keep the hide tab glued to the sidebar's right edge
 </script></body></html>'''
-HTML=HTML.replace('__DATA__', json.dumps(out))
 HTML=HTML.replace('_REC_WINDOW_SHIFTS', str(_REC_WINDOW_SHIFTS))
 # Inline Chart.js for a fully self-contained, offline / no-CDN file. Falls back to CDN if the lib is absent.
 try:
@@ -5023,9 +5108,55 @@ except FileNotFoundError:
     chart_tag='<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>'
     _mode='CDN fallback (lib_chartjs.js not found)'
 HTML=HTML.replace('__CHARTJS__', chart_tag)
+HAULAGE_HTML=HTML.replace('__DATA__', json.dumps(out))
+
+_sql_data_decl="""let DATA = null;
+let view = 'Combined';
+let shift = null;
+const ISTAR_API_BASE = (window.ISTAR_API_BASE || '').replace(/\\/+$/,'');
+function _esc(s){return String(s||'').replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));}
+async function fetchIstarData(){
+  const qs=new URLSearchParams(location.search||'');
+  const explicit=qs.get('dataUrl');
+  const endpoint=explicit || (ISTAR_API_BASE ? (ISTAR_API_BASE+'/api/dashboard-data') : '/api/dashboard-data');
+  const res=await fetch(endpoint,{cache:'no-store'});
+  if(!res.ok)throw new Error('API '+res.status+' from '+endpoint);
+  return await res.json();
+}
+function showLoadError(err){
+  document.querySelectorAll('.page').forEach(p=>{p.hidden=true;});
+  const msg=err&&err.message?err.message:String(err||'unknown error');
+  document.getElementById('gen').innerHTML=
+    '<div class=\"card\" style=\"margin:16px;max-width:820px\">'+
+    '<h3>iSTAR dashboard failed to load SQL backend data</h3>'+
+    '<div class=\"foot\">Set <code>ISTAR_API_BASE</code> (or <code>?dataUrl=...</code>) and ensure your API returns the existing dashboard JSON contract.</div>'+
+    '<pre style=\"white-space:pre-wrap;background:#f6f7f9;border:1px solid #e3e6ec;border-radius:8px;padding:10px\">'+_esc(msg)+'</pre></div>';
+}
+async function initIstarDashboard(){
+  try{
+    DATA=await fetchIstarData();
+    shift=DATA.defaultShift || ((DATA.shifts&&DATA.shifts[0])?DATA.shifts[0].id:null);
+    if(!shift || !DATA.byShift || !DATA.byShift[shift]) throw new Error('Payload missing defaultShift/byShift data.');
+    loadState();
+    renderAll();
+    applySidebar();
+    initSidebarHover();
+  }catch(e){
+    console.error(e);
+    showLoadError(e);
+  }
+}"""
+ISTAR_HTML=HTML.replace("const DATA = __DATA__;\nlet view = 'Combined';\nlet shift = DATA.defaultShift;", _sql_data_decl)
+ISTAR_HTML=ISTAR_HTML.replace("loadState();\nrenderAll();\napplySidebar();\ninitSidebarHover();", "initIstarDashboard();")
+ISTAR_HTML=ISTAR_HTML.replace("window.addEventListener('hashchange',()=>{loadState();renderAll();applySidebar();});",
+                              "window.addEventListener('hashchange',()=>{if(!DATA)return;loadState();renderAll();applySidebar();});")
 # Atomic write: write to a temp file first, then replace — prevents the browser from
 # reading a half-written file during the 5-minute refresh cycle.
 _out=f'{BASE}/Haulage_Dashboard.html'; _tmp=_out+'.tmp'
-open(_tmp,'w',encoding='utf-8').write(HTML)
+open(_tmp,'w',encoding='utf-8').write(HAULAGE_HTML)
 os.replace(_tmp,_out)
-print("HTML written: %s/Haulage_Dashboard.html (%d KB)  Chart.js: %s"%(BASE,len(HTML)//1024,_mode))
+print("HTML written: %s/Haulage_Dashboard.html (%d KB)  Chart.js: %s"%(BASE,len(HAULAGE_HTML)//1024,_mode))
+_istar=f'{BASE}/iSTAR_dashboard.html'; _istar_tmp=_istar+'.tmp'
+open(_istar_tmp,'w',encoding='utf-8').write(ISTAR_HTML)
+os.replace(_istar_tmp,_istar)
+print("HTML written: %s/iSTAR_dashboard.html (%d KB)  data: SQL/API runtime"%(BASE,len(ISTAR_HTML)//1024))
