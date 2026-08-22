@@ -4764,7 +4764,7 @@ function renderPlaybook(){
       grp.forEach(r=>{
         h+=`<tr>
           <td style="font-weight:600;white-space:nowrap;font-size:13px;overflow:hidden;text-overflow:ellipsis">${r.area}</td>
-          <td style="font-size:13px">${r.measure}: ${r.detail}</td>
+          <td style="font-size:13px;text-align:left;overflow:hidden;text-overflow:ellipsis">${r.measure}: ${r.detail}</td>
           <td style="text-align:right;font-size:13px;white-space:nowrap">${r.actual_label}</td>
           <td style="text-align:right;font-size:13px;white-space:nowrap">${r.baseline_label}</td>
           <td style="text-align:right;font-weight:700;color:${pCol[p]};font-size:13px;white-space:nowrap">${r.gap_label}</td>
