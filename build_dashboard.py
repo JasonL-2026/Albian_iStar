@@ -4731,8 +4731,11 @@ function renderPlaybook(){
   const ana=(V()&&V().analytics)||{};
   const cumAct=(ana.cumulative&&ana.cumulative.actual)||[];
   const latestAct=cumAct.reduce((a,v)=>(v!=null?v:a),null);
-  const plan=(V()&&V().analytics&&V().analytics.cumulative&&V().analytics.cumulative.plan)||[];
-  const latestPlan=plan.length?plan[plan.length-1]:null;
+  const cumTarget=(ana.cumulative&&ana.cumulative.target)||[];
+  const totalPlan=(ana.cumulative&&ana.cumulative.plan!=null)?ana.cumulative.plan:null;
+  // Plan-to-now = target value at the same 15-min slot as the latest actual reading
+  let _latestPlanIdx=-1; cumAct.forEach((v,i)=>{if(v!=null)_latestPlanIdx=i;});
+  const latestPlan=(_latestPlanIdx>=0&&cumTarget[_latestPlanIdx]!=null)?cumTarget[_latestPlanIdx]:null;
   const fmt2=v=>(v==null?'—':Math.round(v).toLocaleString());
   const clr=v=>(v==null?'#888':v>=100?'#2f7a44':v>=90?'#b8830a':'#c0392b');
   let h='';
@@ -4774,12 +4777,12 @@ function renderPlaybook(){
   h+=`</div>`;
 
   // =========================================================
-  // PRODUCTION REPORTING & TRACKING ONLY
+  // SECTION 2 — PRODUCTION REPORTING & TRACKING
   // =========================================================
   h+=`<div style="margin-bottom:24px">`;
   h+=`<h3 style="margin:0 0 6px;font-size:20px;color:#2b2f36;border-bottom:2px solid #e0a41f;padding-bottom:6px">2 · Production Reporting &amp; Tracking</h3>`;
 
-  // Actual vs expected summary card
+  // --- KPI summary cards ---
   const actTxt=latestAct!=null?fmt2(latestAct)+' t':'—';
   const planTxt=latestPlan!=null?fmt2(latestPlan)+' t':'—';
   const gapVal=(latestAct!=null&&latestPlan!=null)?(latestAct-latestPlan):null;
@@ -4797,6 +4800,67 @@ function renderPlaybook(){
     </div>`;
   });
   h+=`</div>`;
+
+  // --- Shift production targets (from Shift Overview plan data) ---
+  const hly=ana.hourly||{};
+  const tgtTotal=totalPlan!=null?totalPlan:null;
+  const tgtOreHr=hly.targetOre!=null?hly.targetOre:null;
+  const tgtWstHr=hly.targetWaste!=null?hly.targetWaste:null;
+  const tgtNpHr=hly.targetNonProd!=null?hly.targetNonProd:null;
+  const tgtOre=tgtOreHr!=null?tgtOreHr*12:null;
+  const tgtWst=tgtWstHr!=null?tgtWstHr*12:null;
+  const tgtNp=tgtNpHr!=null?tgtNpHr*12:null;
+  h+=`<h4 style="margin:10px 0 6px;font-size:14px;color:#344">Shift Production Targets</h4>`;
+  h+=`<div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:14px">`;
+  [{label:'Total Shift Target',val:tgtTotal!=null?fmt2(tgtTotal)+' t':'—',col:'#e0a41f',sub:null},
+   {label:'Prod. Ore Target',val:tgtOre!=null?fmt2(tgtOre)+' t':'—',col:'#1f9e8b',sub:tgtOreHr!=null?fmt2(tgtOreHr)+' t/hr':null},
+   {label:'Prod. Waste Target',val:tgtWst!=null?fmt2(tgtWst)+' t':'—',col:'#d08a1f',sub:tgtWstHr!=null?fmt2(tgtWstHr)+' t/hr':null},
+   {label:'Non-Prod. Target',val:tgtNp!=null?fmt2(tgtNp)+' t':'—',col:'#9aa0ab',sub:tgtNpHr!=null?fmt2(tgtNpHr)+' t/hr':null}
+  ].forEach(({label,val,col,sub})=>{
+    h+=`<div style="background:#f4f6fa;border:1px solid #dde1e8;border-radius:8px;padding:10px 18px;min-width:140px">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px">${label}</div>
+      <div style="font-size:22px;font-weight:700;color:${col}">${val}</div>
+      ${sub?`<div style="font-size:11px;color:var(--muted);margin-top:2px">${sub}</div>`:''}
+    </div>`;
+  });
+  h+=`</div>`;
+
+  // --- Per-pit plan tonnes (from appendix plan data) ---
+  const apxPlan=(SD().meta&&SD().meta.appendix&&SD().meta.appendix.plan)||[];
+  if(apxPlan.length){
+    h+=`<h4 style="margin:10px 0 6px;font-size:14px;color:#344">Plan Tonnes by Pit (this shift)</h4>`;
+    h+=`<table class="lanetab" style="margin-bottom:14px"><thead><tr>`;
+    h+=`<th style="text-align:left">Pit</th><th style="text-align:right">Prod. Ore</th><th style="text-align:right">Prod. Waste</th><th style="text-align:right">Prod. Total</th><th style="text-align:right">Non-prod Ore</th><th style="text-align:right">Non-prod Waste</th><th style="text-align:right">Shift Total</th>`;
+    h+=`</tr></thead><tbody>`;
+    let sumPOre=0,sumPWst=0,sumNPOre=0,sumNPWst=0;
+    apxPlan.forEach(x=>{
+      const pProd=(x.POre||0)+(x.PWst||0); const pAll=pProd+(x.NPOre||0)+(x.NPWst||0);
+      sumPOre+=x.POre||0; sumPWst+=x.PWst||0; sumNPOre+=x.NPOre||0; sumNPWst+=x.NPWst||0;
+      h+=`<tr>
+        <td style="font-weight:600">${x.pit}</td>
+        <td style="text-align:right">${fmt2(x.POre)}</td>
+        <td style="text-align:right">${fmt2(x.PWst)}</td>
+        <td style="text-align:right;font-weight:600">${fmt2(pProd)}</td>
+        <td style="text-align:right;color:var(--muted)">${fmt2(x.NPOre)}</td>
+        <td style="text-align:right;color:var(--muted)">${fmt2(x.NPWst)}</td>
+        <td style="text-align:right;font-weight:600">${fmt2(pAll)}</td>
+      </tr>`;
+    });
+    if(apxPlan.length>1){
+      const tProd=sumPOre+sumPWst; const tAll=tProd+sumNPOre+sumNPWst;
+      h+=`<tr style="border-top:2px solid #ccc;font-weight:700">
+        <td>All Pits</td>
+        <td style="text-align:right">${fmt2(sumPOre)}</td>
+        <td style="text-align:right">${fmt2(sumPWst)}</td>
+        <td style="text-align:right">${fmt2(tProd)}</td>
+        <td style="text-align:right;color:var(--muted)">${fmt2(sumNPOre)}</td>
+        <td style="text-align:right;color:var(--muted)">${fmt2(sumNPWst)}</td>
+        <td style="text-align:right">${fmt2(tAll)}</td>
+      </tr>`;
+    }
+    h+=`</tbody></table>`;
+    h+=`<div class="foot" style="margin-bottom:12px">Plan tonnes sourced from the shift budget (same data as Shift Overview cumulative &amp; hourly target lines). Prod. Total = Ore + Waste productive tonnes. <button class="tlbtn" onclick="setTab('overview')">Shift Overview</button></div>`;
+  }
 
   h+=`<h4 style="margin:10px 0 6px;font-size:14px;color:#344">Downtime Root-Cause Log — Reporting Checklist</h4>`;
   h+=`</div>`;
