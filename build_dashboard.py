@@ -4448,6 +4448,7 @@ function renderRecommendations(){
     const combGap=combAct-combPot, gSignC=combGap>=0?'+':'';
     h+=`<h4 class="mini" style="margin-top:4px;font-size:13.8px">Trucks &amp; Shovels &mdash; Scheduled Potential&nbsp;${fmt(combPot)}&nbsp;t &rarr; Actual&nbsp;${fmt(combAct)}&nbsp;t (gap&nbsp;${gSignC}${fmt(combGap)}&nbsp;t)</h4>`;
     h+=buildCombinedProductivityWF(twf,swf);
+    h+='<div class="foot" style="margin-top:8px"><b>Residual</b> is the unexplained accounting difference between Potential and Actual after all tracked KPI rows are summed. It arises from interactions between KPIs, rounding, or data not captured in the individual rows. A small residual (positive or negative) is normal; a large residual suggests a measurement gap worth investigating.</div>';
   }
 
   el.innerHTML=h;
