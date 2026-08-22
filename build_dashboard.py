@@ -31,7 +31,7 @@ PITS=['MRM','JPM']
 WF_ROWS=['Payload','Load','Queue','Spot','DumpIdle','Dumping','FullHaul','EmptyHaul']
 LM_KEY={'Load':'Load','Queue':'Queue','Spot':'Spot','DumpIdle':'DumpIdle','Dumping':'Dumping','FullHaul':'Full','EmptyHaul':'Empty'}
 
-# Metadata for waterfall-priority summary (Recommendations tab)
+# Metadata for waterfall-priority summary (Last 14 Shifts tab)
 # Truck waterfall row keys
 _WF_PRIO_META_TRUCKS={
     'FullHaul':  {'label':'Trucks — Full Haul',        'tab':'haulage', 'kpis':'Avg Full Haul Duration vs. haul-curve; path speed compliance'},
@@ -57,7 +57,7 @@ _WF_PRIO_THRESH=7500  # minimum |delta_t| to include in summary
 _REC_WINDOW_SHIFTS=14
 
 def compute_wf_priority_summary(wf, swf=None, shift_count=1):
-    """Build a ranked waterfall-gap summary for the Recommendations tab.
+    """Build a ranked waterfall-gap summary for the Last 14 Shifts tab.
 
     Args:
         wf:  trucksWF dict (must have 'rows', 'potential', 'actual' keys)
@@ -1988,8 +1988,14 @@ for sid in byShift:
         c['reqFuture']=round(req) if req is not None else None
         c['monthBudget']=round(mbud); c['monthActual']=round(act); c['futureShifts']=future; c['monthShifts']=total
 
-# ---- toggle-aligned recommendations rollups (selected shift vs trailing window) ----
+# ---- toggle-aligned last-14-shifts rollups (selected shift vs trailing window, plus per-crew) ----
 _all_sids=sorted(byShift.keys(),reverse=True)   # most-recent first
+# Build per-crew shift-id lists (most-recent first, matching SHIFTS ordering)
+_crew_sids_map=defaultdict(list)
+for _sm in SHIFTS:
+    _c=_sm.get('crew','').strip()
+    if _c: _crew_sids_map[_c].append(_sm['id'])
+
 for vn in _VPITS:
     for i,sid in enumerate(_all_sids):
         v=byShift[sid]['views'].get(vn)
@@ -1999,7 +2005,18 @@ for vn in _VPITS:
         swf=merge_wf_period([byShift[wsid]['views'][vn].get('shovelWF2') for wsid in window])
         if v.get('wfPrioritySummary'):
             v['wfPrioritySummary']['last14']=compute_wf_priority_summary(twf,swf=swf,shift_count=len(window)) if twf else None
-        v['recommendationProdWF']={'last14':{'trucksWF':twf,'shovelWF2':swf,'shiftCount':len(window)}}
+        # Per-crew last-14 windows: for each crew take their own last 14 shifts at/before this shift
+        crew_data={}
+        for _crew,_csids in _crew_sids_map.items():
+            cw=[csid for csid in _csids if csid<=sid and byShift[csid]['views'].get(vn)][:_REC_WINDOW_SHIFTS]
+            if not cw: continue
+            ctwf=merge_wf_period([byShift[csid]['views'][vn].get('trucksWF') for csid in cw])
+            cswf=merge_wf_period([byShift[csid]['views'][vn].get('shovelWF2') for csid in cw])
+            crew_data[_crew]={
+                'trucksWF':ctwf,'shovelWF2':cswf,'shiftCount':len(cw),
+                'wfPrioritySummary':compute_wf_priority_summary(ctwf,swf=cswf,shift_count=len(cw)) if ctwf else None,
+            }
+        v['recommendationProdWF']={'last14':{'trucksWF':twf,'shovelWF2':swf,'shiftCount':len(window)},'perCrew':crew_data}
 
 out={'meta':{'generated':datetime.datetime.now().strftime('%Y-%m-%d %H:%M'),'payloadTarget':PAYLOAD_TARGET},
      'shifts':shiftlist,'defaultShift':(SHIFTS[0]['id'] if SHIFTS else None),'byShift':byShift}
@@ -2401,7 +2418,7 @@ body.sb-auto .pagenav{display:flex}
 
     <section class="page" id="pg-recommendations" hidden>
       <div class="section">
-        <h2>Recommendations <span class="sub" id="recsub"></span></h2>
+        <h2>Last 14 Shifts <span class="sub" id="recsub"></span></h2>
         <div id="recBody"></div>
         <div class="foot">Only measures below baseline are listed. Priority is driven by the size of the miss, and each row links to the source tab for drill-down.</div>
       </div>
@@ -3421,7 +3438,8 @@ function renderShovBox(which){
   else document.getElementById('chLoadS2').innerHTML=drawBoxPlot(a.loadbox,{axisLabel:'load time (min)',unit:' min',scale:1/60,dec:1,hideOutliers:true});
 }
 let shovAllOpen=false;   // Expand all / Contract all for the shovel-waterfall box plots
-let wfPrioMode='perShift';   // Recommendations toggle: 'perShift' | 'last14'
+let wfPrioMode='perShift';   // Last 14 Shifts toggle: 'perShift' | 'last14'
+let wfCrewFilter='All';      // Last 14 Shifts crew filter: 'All' | specific crew name
 function toggleShovExpand(){
   shovAllOpen=!shovAllOpen;
   Object.keys(SHOVBOX).forEach(w=>{const [sid,bid,lbl]=SHOVBOX[w];const sec=document.getElementById(sid),btn=document.getElementById(bid);
@@ -4301,22 +4319,76 @@ function collectRecommendations(){
 function renderRecommendations(){
   const el=document.getElementById('recBody');
   const meta={1:{label:'High priority',color:'#ff0000'},2:{label:'Medium priority',color:'#b85c00'},3:{label:'Low priority',color:'#f0c030'}};
-
-  // ---- Section 0: Waterfall Priority Gaps (Python-computed, per-shift + trailing-14-shift) ----
-  const wfps=(V()&&V().wfPrioritySummary)||null;
-  const wfpData=wfps?(wfps[wfPrioMode]||wfps['perShift']):null;
   const gSign=n=>(n>=0?'+':'')+Math.round(n).toLocaleString();
-  let h='<h3 style="margin:0 0 6px;font-size:20.25px;color:#344">Waterfall Priority Gaps</h3>';
+
+  // Derive available crews from DATA.shifts (preserve insertion order, skip blanks)
+  const crews=[...new Set(DATA.shifts.map(s=>s.crew).filter(Boolean))].sort();
+  const hasCrew=crews.length>0;
+
+  // ---- Crew selector ----
+  let h='';
+  if(hasCrew){
+    const btnStyle=(on)=>`margin-right:5px;padding:3px 11px;border-radius:4px;border:1px solid ${on?'#3f51b5':'#ccd'};background:${on?'#3f51b5':'#f5f7fa'};color:${on?'#fff':'#445'};font-weight:${on?'600':'400'};cursor:pointer;font-size:13.5px`;
+    h+=`<div style="margin-bottom:12px"><b style="font-size:13px;color:#445;margin-right:6px">Crew:</b>`;
+    h+=`<button onclick="wfCrewFilter='All';renderRecommendations()" style="${btnStyle(wfCrewFilter==='All')}">All</button>`;
+    crews.forEach(c=>{h+=`<button onclick="wfCrewFilter='${c}';renderRecommendations()" style="${btnStyle(wfCrewFilter===c)}">Crew ${c}</button>`;});
+    h+=`</div>`;
+  }
+
+  // ---- Per-crew KPI summary table (shown in "All" mode when crew data available) ----
+  if(hasCrew && wfCrewFilter==='All'){
+    const perCrew=(V()&&V().recommendationProdWF&&V().recommendationProdWF.perCrew)||{};
+    const crewsWithData=crews.filter(c=>perCrew[c]);
+    if(crewsWithData.length){
+      h+=`<h3 style="margin:0 0 6px;font-size:17.25px;color:#344">KPI Summary — Last 14 Shifts per Crew</h3>`;
+      h+=`<p style="margin:0 0 10px;font-size:12px;color:var(--muted)">Aggregated over each crew's last ${_REC_WINDOW_SHIFTS||14} shifts for the active <b>${view}</b> view. <span style="color:#2f8f4e">■ green = ≥90%</span> · <span style="color:#c98a1f">■ amber = 70–90%</span> · <span style="color:#c0392b">■ red = &lt;70%</span>.</p>`;
+      const scoreCol=v=>{if(v==null)return '<td style="text-align:center;color:#aaa">—</td>'; const c=v>=90?'#2f8f4e':(v>=70?'#c98a1f':'#c0392b'); return `<td style="text-align:center;font-weight:700;color:${c}">${v.toFixed(1)}%</td>`;};
+      const pctCol=v=>{if(v==null)return '<td style="text-align:center;color:#aaa">—</td>'; const c=v>=90?'#2f8f4e':(v>=70?'#c98a1f':'#c0392b'); return `<td style="text-align:center;color:${c}">${v.toFixed(1)}%</td>`;};
+      const tCol=v=>v==null?'<td style="text-align:right;color:#aaa">—</td>':`<td style="text-align:right">${(v/1000).toFixed(0)}k t</td>`;
+      h+=`<table class="lanetab"><tr><th>KPI</th><th>UOM</th>`+crewsWithData.map(c=>`<th>Crew ${c}<br><span style="font-weight:400;font-size:10px;color:#888">(${perCrew[c].shiftCount} shifts)</span></th>`).join('')+`</tr>`;
+      // Haulage Score
+      h+=`<tr><td>Haulage Score</td><td>%</td>`+crewsWithData.map(c=>{const tw=perCrew[c].trucksWF; const sc=tw?(tw.actual/(tw.schedPotential||tw.potential)*100):null; return scoreCol(sc);}).join('')+`</tr>`;
+      // Loading Score
+      h+=`<tr><td>Loading Score</td><td>%</td>`+crewsWithData.map(c=>{const sw=perCrew[c].shovelWF2; const sc=sw?(sw.actual/(sw.schedPotential||sw.potential)*100):null; return scoreCol(sc);}).join('')+`</tr>`;
+      // PA, UA, OE — from truck waterfall availDecomp if available
+      ['PA','UA','OE'].forEach(kpi=>{
+        h+=`<tr><td>Cat 797 ${kpi}</td><td>%</td>`+crewsWithData.map(c=>{
+          const tw=perCrew[c].trucksWF; const av=tw&&tw.availDecomp;
+          const v=av?(kpi==='PA'?av.pa&&av.pa.pct:(kpi==='UA'?av.ua&&av.ua.pct:av.oe&&av.oe.pct)):null;
+          return pctCol(v);
+        }).join('')+`</tr>`;
+      });
+      // Actual tonnes
+      h+=`<tr><td>Actual Dumped</td><td>kt</td>`+crewsWithData.map(c=>{const tw=perCrew[c].trucksWF; return tCol(tw?tw.actual:null);}).join('')+`</tr>`;
+      h+=`</table>`;
+    }
+    h+=`<hr style="margin:16px 0 12px;border:none;border-top:1px solid #dde1e8">`;
+  }
+
+  // ---- Waterfall Priority Gaps ----
+  // When a crew is selected, use that crew's perCrew wfPrioritySummary for last14 mode
+  const perCrewEntry=(wfCrewFilter!=='All')
+    ? ((V()&&V().recommendationProdWF&&V().recommendationProdWF.perCrew&&V().recommendationProdWF.perCrew[wfCrewFilter])||null)
+    : null;
+  const wfps=(V()&&V().wfPrioritySummary)||null;
+  const wfpData=perCrewEntry
+    ? (perCrewEntry.wfPrioritySummary||null)
+    : (wfps?(wfps[wfPrioMode]||wfps['perShift']):null);
+  h+=`<h3 style="margin:0 0 6px;font-size:20.25px;color:#344">Waterfall Priority Gaps</h3>`;
   h+=`<p style="margin:0 0 10px;font-size:16.2px;color:var(--muted)">Waterfall components with |gap| &gt; 7,500 t vs. Potential, ranked by absolute tonnage loss. Threshold: <b>High</b> &gt;50k t · <b>Medium</b> 15k–50k t · <b>Low</b> 7.5k–15k t. Gains shown separately below.</p>`;
-  h+=`<div style="margin-bottom:10px">`+['perShift','last14'].map(m=>{
-    const lbl=m==='perShift'?'This Shift':'Last 14 Shifts';
-    const on=wfPrioMode===m;
-    return `<button onclick="wfPrioMode='${m}';renderRecommendations()" style="margin-right:6px;padding:4px 12px;border-radius:4px;border:1px solid ${on?'#3f51b5':'#ccd'};background:${on?'#3f51b5':'#f5f7fa'};color:${on?'#fff':'#445'};font-weight:${on?'600':'400'};cursor:pointer;font-size:16.2px">${lbl}</button>`;
-  }).join('')+`</div>`;
+  if(wfCrewFilter==='All'){
+    h+=`<div style="margin-bottom:10px">`+['perShift','last14'].map(m=>{
+      const lbl=m==='perShift'?'This Shift':'Last 14 Shifts';
+      const on=wfPrioMode===m;
+      return `<button onclick="wfPrioMode='${m}';renderRecommendations()" style="margin-right:6px;padding:4px 12px;border-radius:4px;border:1px solid ${on?'#3f51b5':'#ccd'};background:${on?'#3f51b5':'#f5f7fa'};color:${on?'#fff':'#445'};font-weight:${on?'600':'400'};cursor:pointer;font-size:16.2px">${lbl}</button>`;
+    }).join('')+`</div>`;
+  } else {
+    h+=`<p style="margin:0 0 8px;font-size:13px;color:#445">Showing last ${perCrewEntry?perCrewEntry.shiftCount:0} shifts for <b>Crew ${wfCrewFilter}</b> (${view}).</p>`;
+  }
   if(!wfpData||(!wfpData.losses.length&&!wfpData.gains.length)){
     h+='<div class="foot">No waterfall components exceed the 7,500 t threshold for this view/period.</div>';
   } else {
-    const scLabel=wfPrioMode==='last14'?`Last ${wfpData.shiftCount} shifts`:'This shift';
+    const scLabel=perCrewEntry?`Crew ${wfCrewFilter} · last ${perCrewEntry.shiftCount} shifts`:(wfPrioMode==='last14'?`Last ${wfpData.shiftCount} shifts`:'This shift');
     if(wfpData.losses.length){
       const losBadges=[1,2,3].map(k=>{const n=wfpData.losses.filter(r=>r.priority===k).length; return n?`<span class="badge"><b style="color:${meta[k].color}">${meta[k].label}</b> ${n}</span>`:''}).join('');
       h+=`<h4 class="mini" style="font-size:16.2px">Losses — below Potential</h4>${losBadges}`;
@@ -4353,14 +4425,19 @@ function renderRecommendations(){
   }
   h+=`<hr style="margin:18px 0 14px;border:none;border-top:1px solid #dde1e8">`;
 
-  // ---- Section 1: Productivity Waterfall Summary ----
-  const prodPeriod=wfPrioMode==='last14' ? ((V()&&V().recommendationProdWF&&V().recommendationProdWF.last14)||null) : null;
-  const prodShiftCount=prodPeriod&&prodPeriod.shiftCount ? prodPeriod.shiftCount : 1;
-  const twf=wfPrioMode==='last14' ? (prodPeriod?prodPeriod.trucksWF:null) : (V()&&V().trucksWF);
-  const swf=wfPrioMode==='last14' ? (prodPeriod?prodPeriod.shovelWF2:null) : (V()&&V().shovelWF2);
-  h+=`<hr style="margin:18px 0 14px;border:none;border-top:1px solid #dde1e8">`;
+  // ---- Productivity Waterfall Summary ----
+  let twf, swf, prodShiftCount;
+  if(perCrewEntry){
+    twf=perCrewEntry.trucksWF; swf=perCrewEntry.shovelWF2; prodShiftCount=perCrewEntry.shiftCount;
+  } else {
+    const prodPeriod=wfPrioMode==='last14' ? ((V()&&V().recommendationProdWF&&V().recommendationProdWF.last14)||null) : null;
+    prodShiftCount=prodPeriod&&prodPeriod.shiftCount ? prodPeriod.shiftCount : 1;
+    twf=wfPrioMode==='last14' ? (prodPeriod?prodPeriod.trucksWF:null) : (V()&&V().trucksWF);
+    swf=wfPrioMode==='last14' ? (prodPeriod?prodPeriod.shovelWF2:null) : (V()&&V().shovelWF2);
+  }
   h+=`<h3 style="margin:0 0 4px;font-size:17.25px;color:#344">Productivity Waterfall Summary</h3>`;
-  h+=`<p style="margin:0 0 12px;font-size:11.5px;color:var(--muted)">Combined bridge from Scheduled Potential to Actual across both Trucks and Shovels for the active <b>${view}</b> toggle selection (${wfPrioMode==='last14'?`last ${prodShiftCount} shifts`:'this shift'}). Potential is the higher (unconstrained) fleet potential, while a Non-Productive row closes any accounting gap.</p>`;
+  const periodLabel=perCrewEntry?`Crew ${wfCrewFilter} · last ${prodShiftCount} shifts`:(wfPrioMode==='last14'?`last ${prodShiftCount} shifts`:'this shift');
+  h+=`<p style="margin:0 0 12px;font-size:11.5px;color:var(--muted)">Combined bridge from Scheduled Potential to Actual across both Trucks and Shovels for the active <b>${view}</b> toggle selection (${periodLabel}). Potential is the higher (unconstrained) fleet potential, while a Non-Productive row closes any accounting gap.</p>`;
   if(!twf&&!swf){
     h+='<div class="foot">No waterfall data available for this view.</div>';
   } else {
@@ -4368,8 +4445,8 @@ function renderRecommendations(){
     const sPot=swf?(swf.schedPotential||swf.potential):0;
     const combPot=Math.max(tPot,sPot);
     const combAct=twf?twf.actual:(swf?swf.actual:0);
-    const combGap=combAct-combPot, gSign=combGap>=0?'+':'';
-    h+=`<h4 class="mini" style="margin-top:4px;font-size:13.8px">Trucks &amp; Shovels &mdash; Scheduled Potential&nbsp;${fmt(combPot)}&nbsp;t &rarr; Actual&nbsp;${fmt(combAct)}&nbsp;t (gap&nbsp;${gSign}${fmt(combGap)}&nbsp;t)</h4>`;
+    const combGap=combAct-combPot, gSignC=combGap>=0?'+':'';
+    h+=`<h4 class="mini" style="margin-top:4px;font-size:13.8px">Trucks &amp; Shovels &mdash; Scheduled Potential&nbsp;${fmt(combPot)}&nbsp;t &rarr; Actual&nbsp;${fmt(combAct)}&nbsp;t (gap&nbsp;${gSignC}${fmt(combGap)}&nbsp;t)</h4>`;
     h+=buildCombinedProductivityWF(twf,swf);
   }
 
@@ -4745,7 +4822,7 @@ function renderPlaybook(){
   // =========================================================
   h+=`<div style="margin-bottom:24px">`;
   h+=`<h3 style="margin:0 0 6px;font-size:20px;color:#2b2f36;border-bottom:2px solid #3f51b5;padding-bottom:6px">1 · Shift Handover &amp; Daily Execution Plan</h3>`;
-  h+=`<p style="margin:0 0 10px;font-size:13px;color:var(--muted)">Priority actions for the incoming shift, derived from the Recommendations analysis. Address items in order — each links to the relevant analysis tab.</p>`;
+  h+=`<p style="margin:0 0 10px;font-size:13px;color:var(--muted)">Priority actions for the incoming shift, derived from the Last 14 Shifts analysis. Address items in order — each links to the relevant analysis tab.</p>`;
 
   if(!recs.length){
     h+=`<div class="foot">All cycle components are at or within budget for this view. No handover actions required.</div>`;
@@ -4869,7 +4946,7 @@ function renderPlaybook(){
 
   el.innerHTML=h;
 }
-const TABS=[['overview','Shift Overview',0],['recommendations','Recommendations',0],['playbook','Playbook',0],['matplace','Material Placement',0],['balance','Truck / Shovel Balance',0],['shovel2','Shovel Waterfall',0],['loading','Loading drill-down',1],['shovprod','Shovel Productivity',1],['trucks','Truck Waterfall',0],['haulage','Haulage drill-down',1],['truckflow','Truck Flow',1],['delays','Delays & Standby',1],['truckprod','Truck Productivity',1],['hourlyperf','Hourly Production',0],['lube','Fuel and Lube',0],['shiftstats','Shift Stats',0],['trends','Cross-Shift Trends',0],['appendix','Appendix',0],['sandbox','Sandbox',0]];
+const TABS=[['overview','Shift Overview',0],['recommendations','Last 14 Shifts',0],['playbook','Playbook',0],['matplace','Material Placement',0],['balance','Truck / Shovel Balance',0],['shovel2','Shovel Waterfall',0],['loading','Loading drill-down',1],['shovprod','Shovel Productivity',1],['trucks','Truck Waterfall',0],['haulage','Haulage drill-down',1],['truckflow','Truck Flow',1],['delays','Delays & Standby',1],['truckprod','Truck Productivity',1],['hourlyperf','Hourly Production',0],['lube','Fuel and Lube',0],['shiftstats','Shift Stats',0],['trends','Cross-Shift Trends',0],['appendix','Appendix',0],['sandbox','Sandbox',0]];
 let tab='overview';
 let sbAuto=true;   // sidebar auto-hides (slides off-screen) by default; hover the left edge to reveal
 function applySidebar(){document.body.classList.toggle('sb-auto',sbAuto);if(!sbAuto)document.body.classList.remove('sb-show');posHideTab();}
