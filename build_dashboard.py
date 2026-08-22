@@ -4831,17 +4831,15 @@ function renderPlaybook(){
       const grp=recs.filter(r=>r.priority===p);
       if(!grp.length)return;
       h+=`<h4 style="margin:12px 0 6px;font-size:14px;color:${pCol[p]}">${pLbl[p]}-Priority Actions</h4>`;
-      h+=`<table class="lanetab" style="table-layout:fixed;width:100%"><colgroup>`;
-      h+=`<col style="width:160px"><col style="width:auto"><col style="width:130px"><col style="width:110px"><col style="width:130px"><col style="width:130px"><col style="width:60px">`;
-      h+=`</colgroup><thead><tr>`;
-      h+=`<th style="text-align:left">Area</th><th style="text-align:left">Justification</th>`;
-      h+=`<th style="text-align:right">Actual</th><th style="text-align:right">Budget</th>`;
-      h+=`<th style="text-align:right">Gap</th><th style="text-align:right">Tonnes at Risk</th><th></th>`;
+      h+=`<table class="lanetab" style="width:100%"><thead><tr>`;
+      h+=`<th style="text-align:left;width:160px;white-space:nowrap">Area</th><th style="text-align:left">Justification</th>`;
+      h+=`<th style="text-align:right;white-space:nowrap;min-width:100px">Actual</th><th style="text-align:right;white-space:nowrap;min-width:100px">Budget</th>`;
+      h+=`<th style="text-align:right;white-space:nowrap;min-width:100px">Gap</th><th style="text-align:right;white-space:nowrap;min-width:110px">Tonnes at Risk</th><th style="width:60px"></th>`;
       h+=`</tr></thead><tbody>`;
       grp.forEach(r=>{
         h+=`<tr>
-          <td style="font-weight:600;white-space:nowrap;font-size:13px;overflow:hidden;text-overflow:ellipsis">${r.area}</td>
-          <td style="font-size:13px;text-align:left;overflow:hidden;text-overflow:ellipsis">${r.measure}: ${r.detail}</td>
+          <td style="font-weight:600;white-space:nowrap;font-size:13px">${r.area}</td>
+          <td style="font-size:13px;text-align:left">${r.measure}: ${r.detail}</td>
           <td style="text-align:right;font-size:13px;white-space:nowrap">${r.actual_label}</td>
           <td style="text-align:right;font-size:13px;white-space:nowrap">${r.baseline_label}</td>
           <td style="text-align:right;font-weight:700;color:${pCol[p]};font-size:13px;white-space:nowrap">${r.gap_label}</td>
