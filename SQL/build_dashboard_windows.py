@@ -83,7 +83,14 @@ _COLRE=re.compile(r'^Dtl_(.*?)(?:_\d+)?$')
 def _normcol(h):   # SSRS exports name columns "Dtl_<Name>_<pos>"; strip that (and BOM) → plain <Name>. Leaves plain headers unchanged.
     h=h.strip().lstrip('﻿'); m=_COLRE.match(h); return m.group(1) if m else h
 def load_csv(name):
-    with open(f'{DATADIR}/{name}',encoding='utf-8-sig',newline='') as f:
+    path=f'{DATADIR}/{name}'
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"Required data file not found: {path}\n"
+            f"  Make sure the Data\\ folder exists next to this script and contains the exported CSV files.\n"
+            f"  Expected location: {DATADIR}\\"
+        )
+    with open(path,encoding='utf-8-sig',newline='') as f:
         rdr=csv.reader(f)
         try: hdr=[_normcol(c) for c in next(rdr)]
         except StopIteration: return []

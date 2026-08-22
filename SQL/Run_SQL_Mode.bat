@@ -65,6 +65,8 @@ echo.
 REM Locate Python
 set "PYEXE="
 if exist "%~dp0python_path.txt" set /p PYEXE=<"%~dp0python_path.txt"
+REM If python_path.txt contains a folder path (not the .exe), append python.exe automatically
+if defined PYEXE if exist "%PYEXE%\" set "PYEXE=%PYEXE%\python.exe"
 if defined PYEXE if not exist "%PYEXE%" set "PYEXE="
 if not defined PYEXE where py >nul 2>nul && set "PYEXE=py"
 if not defined PYEXE where python3 >nul 2>nul && set "PYEXE=python3"
@@ -75,9 +77,11 @@ if not defined PYEXE (
         "%LocalAppData%\Programs\Python\Python312\python.exe"
         "%LocalAppData%\Programs\Python\Python311\python.exe"
         "%LocalAppData%\Programs\Python\Python310\python.exe"
+        "%LocalAppData%\Programs\Python\Python39\python.exe"
         "C:\Program Files\Python313\python.exe"
         "C:\Program Files\Python312\python.exe"
         "C:\Program Files\Python311\python.exe"
+        "C:\Program Files\Python39\python.exe"
         "%UserProfile%\Anaconda3\python.exe"
         "%UserProfile%\Miniconda3\python.exe"
         "%ProgramData%\Anaconda3\python.exe"

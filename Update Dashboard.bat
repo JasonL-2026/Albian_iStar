@@ -36,6 +36,8 @@ set "PYEXE="
 
 REM 1) Manual override: full path to python.exe saved in python_path.txt
 if exist "%~dp0python_path.txt" set /p PYEXE=<"%~dp0python_path.txt"
+REM If python_path.txt contains a folder path (not the .exe), append python.exe automatically
+if defined PYEXE if exist "%PYEXE%\" set "PYEXE=%PYEXE%\python.exe"
 if defined PYEXE if not exist "%PYEXE%" set "PYEXE="
 
 REM 2) Windows 'py' launcher (works even when 'python' is not on PATH)
@@ -51,9 +53,11 @@ if not defined PYEXE (
     "%LocalAppData%\Programs\Python\Python312\python.exe"
     "%LocalAppData%\Programs\Python\Python311\python.exe"
     "%LocalAppData%\Programs\Python\Python310\python.exe"
+    "%LocalAppData%\Programs\Python\Python39\python.exe"
     "C:\Program Files\Python313\python.exe"
     "C:\Program Files\Python312\python.exe"
     "C:\Program Files\Python311\python.exe"
+    "C:\Program Files\Python39\python.exe"
     "%UserProfile%\Anaconda3\python.exe"
     "%UserProfile%\Miniconda3\python.exe"
     "%ProgramData%\Anaconda3\python.exe"
