@@ -5023,6 +5023,7 @@ window.addEventListener('hashchange',()=>{loadState();renderAll();applySidebar()
 window.addEventListener('resize',()=>{posHideTab();applyScreenScale();});   // keep the hide tab glued to the sidebar's right edge
 </script></body></html>'''
 HTML=HTML.replace('__DATA__', json.dumps(out))
+HTML=HTML.replace('_REC_WINDOW_SHIFTS', str(_REC_WINDOW_SHIFTS))
 # Inline Chart.js for a fully self-contained, offline / no-CDN file. Falls back to CDN if the lib is absent.
 try:
     _cjs=open(f'{BASE}/lib_chartjs.js',encoding='utf-8').read()
