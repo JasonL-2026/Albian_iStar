@@ -4757,7 +4757,7 @@ function renderPlaybook(){
       h+=`<table class="lanetab" style="table-layout:fixed;width:100%"><colgroup>`;
       h+=`<col style="width:160px"><col style="width:auto"><col style="width:130px"><col style="width:110px"><col style="width:130px"><col style="width:130px"><col style="width:60px">`;
       h+=`</colgroup><thead><tr>`;
-      h+=`<th style="text-align:left">Area</th><th style="text-align:left">Action Required</th>`;
+      h+=`<th style="text-align:left">Area</th><th style="text-align:left">Justification</th>`;
       h+=`<th style="text-align:right">Actual</th><th style="text-align:right">Budget</th>`;
       h+=`<th style="text-align:right">Gap</th><th style="text-align:right">Tonnes at Risk</th><th></th>`;
       h+=`</tr></thead><tbody>`;
