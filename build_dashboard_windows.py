@@ -111,12 +111,20 @@ def _rdl_root(path):
         _RDL_CACHE[path]=ET.parse(path).getroot()
     return _RDL_CACHE[path]
 
+def _rdl_ns(root):
+    """Return the XML namespace string (e.g. '{http://...}') from the root tag, or '' if none."""
+    tag=root.tag
+    if tag.startswith('{'):
+        return tag[:tag.index('}')+1]
+    return ''
+
 def _rdl_query_info(rdl_file, dataset_name):
     root=_rdl_root(f'{BASE}/Data/RDLs/{rdl_file}')
-    ds=root.find(f".//{{*}}DataSet[@Name='{dataset_name}']")
+    ns=_rdl_ns(root)
+    ds=root.find(f".//{ns}DataSet[@Name='{dataset_name}']")
     if ds is None: raise KeyError(f'Dataset {dataset_name} not found in {rdl_file}')
-    cmd=(ds.findtext('./{*}Query/{*}CommandText') or '').strip()
-    qps=[qp.get('Name','').lstrip('@') for qp in ds.findall('./{*}Query/{*}QueryParameters/{*}QueryParameter')]
+    cmd=(ds.findtext(f'./{ns}Query/{ns}CommandText') or '').strip()
+    qps=[qp.get('Name','').lstrip('@') for qp in ds.findall(f'./{ns}Query/{ns}QueryParameters/{ns}QueryParameter')]
     return html.unescape(cmd), qps
 
 def _sql_connect():
