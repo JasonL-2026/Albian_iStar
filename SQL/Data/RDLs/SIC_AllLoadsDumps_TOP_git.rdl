@@ -20,7 +20,7 @@
             <Value>=Parameters!EndShift.Value</Value>
           </QueryParameter>
         </QueryParameters>
-        <CommandText>SELECT TOP 100000
+        <CommandText>SELECT *
        [ShiftStartTimestamp]
       ,[FullShiftName]
       ,[ShiftId]
