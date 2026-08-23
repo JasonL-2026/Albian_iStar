@@ -4477,6 +4477,7 @@ SELECT 'Last Week' AS PresetLabel,
         <Height>1in</Height>
         <Style />
       </Body>
+      <Width>55.80in</Width>
       <Page>
         <PageHeight>8.5in</PageHeight>
         <PageWidth>11in</PageWidth>
