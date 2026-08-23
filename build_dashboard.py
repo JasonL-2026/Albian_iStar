@@ -218,6 +218,7 @@ _SQL_SOURCE_MAP={
     'TruckAtLubeLand.csv':('TruckAtLubeLand_git.rdl','dsTruckAtLubeLand'),
     'SystemVsManualFuelAssignments.csv':('SystemVsManualFuelAssignments_git.rdl','dsSystemVsManualFuelAssignments'),
     'TruckBalance.csv':('TruckBalance_git.rdl','dsTruckBalance'),
+    'ShovelCoverageFactors.csv':('ShovelCoverageFactors_git.rdl','dsShovelCoverageFactors'),
 }
 _RDL_CACHE={}
 _SQL_CONN=None
