@@ -27,7 +27,7 @@ cd "$(dirname "$0")"
 #  REQUIRED: set your ODBC connection string here,
 #  or export DASH_SQL_CONNECTION_STRING before running.
 # -------------------------------------------------------
-: "${DASH_SQL_CONNECTION_STRING:=Driver={ODBC Driver 17 for SQL Server};Server=<SERVER>\<INSTANCE>;Database=<DB>;UID=<user>;******;}"
+: "${DASH_SQL_CONNECTION_STRING:=Driver={ODBC Driver 17 for SQL Server};Server=<SERVER>\<INSTANCE>;Database=<DB>;UID=dispowner;******;}"
 
 # -------------------------------------------------------
 #  OPTIONAL overrides (leave blank to use defaults)

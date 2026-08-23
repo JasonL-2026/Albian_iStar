@@ -26,7 +26,7 @@ REM -------------------------------------------------------
 REM  REQUIRED: set your ODBC connection string here.
 REM  Leave as-is to be prompted at runtime instead.
 REM -------------------------------------------------------
-set "DASH_SQL_CONNECTION_STRING=Driver={ODBC Driver 17 for SQL Server};Server=<SERVER>\<INSTANCE>;Database=<DB>;UID=<user>;******;"
+set "DASH_SQL_CONNECTION_STRING=Driver={ODBC Driver 17 for SQL Server};Server=<SERVER>\<INSTANCE>;Database=<DB>;UID=dispowner;******;"
 
 REM -------------------------------------------------------
 REM  OPTIONAL overrides (leave blank to use defaults)
