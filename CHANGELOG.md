@@ -21,6 +21,38 @@ Versions follow [semantic versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 - Updated repository governance documentation to formalize PR-only promotion flow (`feature|fix -> DEV -> TEST -> PROD -> BACKUP`) and required PR evidence/approvals.
 - Added GitHub web UI instructions for resolving branch-promotion and PR-evidence check failures before merge.
 
+### Fixed
+- `trucksatdump_git.rdl`: changed `FROM [CommonASE].[TrucksAtDump]` to `FROM [ASEOperational].[CommonASE].[TrucksAtDump]` (fully-qualified 3-part name) so the query works regardless of the default database set in the DSN or connection string.
+
+---
+
+## 🗓️ Next Steps — Target: ~2 weeks (September 2026)
+
+### Live-Query Web Server Architecture (replaces embedded-data HTML)
+
+**Problem:** The current static build bakes all shift data into `Haulage_Dashboard.html`, resulting in a ~12 MB file that must be fully rebuilt to refresh data.
+
+**Proposed solution:** Split into a lightweight Python web server + thin HTML frontend:
+
+1. **Python backend** (`dashboard_server.py`) — runs locally on the mine PC or server.
+   - Uses Python's built-in `http.server` (zero new dependencies) or `Flask`.
+   - Exposes `/api/<dataset>` endpoints that query SQL live on each request.
+   - Datasets: `loads`, `status`, `truckatshovel`, `truckatdump`, `balance`, `lube`.
+
+2. **HTML frontend** — becomes a thin shell (~50 KB).
+   - Loads `lib_chartjs.js` for charts (already in repo).
+   - Uses `fetch('/api/...')` to pull data on page load and on a configurable auto-refresh timer.
+   - No data embedded; file stays small regardless of shift history.
+
+3. **Launcher** (`Run_Live_Server.bat`) — starts the Python server, opens the browser automatically, keeps running in the background.
+
+4. **Keep existing static build** (`build_dashboard_windows.py`) as a fallback for offline snapshots and emailed reports.
+
+**Decisions needed before implementation:**
+- Flask (cleaner routing, requires `pip install flask`) vs stdlib `http.server` (no install, offline-safe)?
+- Default port (`8050` suggested)?
+- Auto-refresh interval (5 min default)?
+
 ---
 
 ## [1.0.0] — Initial Release
