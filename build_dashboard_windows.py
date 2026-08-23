@@ -22,7 +22,8 @@ Locked definitions (agreed section-by-section):
                    Above Potential: Sched. Potential → PA → UA → OE rows (Cat 797 availability vs budget
                    CSV, same calc as KPI tab), each bar embeds the top Down/Standby/Delay reason.
 """
-import csv, json, datetime, os, re
+import csv, json, datetime, os, re, html
+import xml.etree.ElementTree as ET
 from collections import defaultdict
 
 # Anchor all paths to THIS script's folder, so the project works from any working directory
@@ -82,7 +83,83 @@ DATADIR=os.environ.get('DASH_DATADIR') or f'{BASE}/Data'   # override with DASH_
 _COLRE=re.compile(r'^Dtl_(.*?)(?:_\d+)?$')
 def _normcol(h):   # SSRS exports name columns "Dtl_<Name>_<pos>"; strip that (and BOM) → plain <Name>. Leaves plain headers unchanged.
     h=h.strip().lstrip('﻿'); m=_COLRE.match(h); return m.group(1) if m else h
+_SQL_MODE=os.environ.get('DASH_SQL_MODE','').strip().lower() in ('1','true','yes','on')
+_SQL_SOURCE_MAP={
+    'AllLoadsDumps.csv':('AllLoadsDumps_git.rdl','dsAllLoadsDumps'),
+    'Statusevents.csv':('Statusevents_git.rdl','dsStatusevents'),
+    'TruckatShovel.csv':('TruckatShovel_git.rdl','dsTruckatShovel'),
+    'TruckAtDump.csv':('trucksatdump_git.rdl','TrucksAtDump'),
+    'TruckAtLubeLand.csv':('TruckAtLubeLand_git.rdl','dsTruckAtLubeLand'),
+    'TruckBalance.csv':('TruckBalance_git.rdl','dsTruckBalance'),
+}
+_RDL_CACHE={}
+_SQL_CONN=None
+
+def _sql_shift_bounds():
+    if os.environ.get('DASH_SQL_START_SHIFT') and os.environ.get('DASH_SQL_END_SHIFT'):
+        return int(os.environ['DASH_SQL_START_SHIFT']), int(os.environ['DASH_SQL_END_SHIFT'])
+    lookback=max(1,int(os.environ.get('DASH_SQL_LOOKBACK_DAYS','21')))
+    now=_dtm.now()
+    today=now.date()
+    anchor=today if now.hour>=6 else (today-_td(days=1))
+    end_seq='001' if 6<=now.hour<18 else '002'
+    start_day=anchor-_td(days=lookback)
+    return int(start_day.strftime('%y%m%d')+'001'), int(anchor.strftime('%y%m%d')+end_seq)
+
+def _rdl_root(path):
+    if path not in _RDL_CACHE:
+        _RDL_CACHE[path]=ET.parse(path).getroot()
+    return _RDL_CACHE[path]
+
+def _rdl_query_info(rdl_file, dataset_name):
+    root=_rdl_root(f'{BASE}/Data/RDLs/{rdl_file}')
+    ds=root.find(f".//{{*}}DataSet[@Name='{dataset_name}']")
+    if ds is None: raise KeyError(f'Dataset {dataset_name} not found in {rdl_file}')
+    cmd=(ds.findtext('./{*}Query/{*}CommandText') or '').strip()
+    qps=[qp.get('Name','').lstrip('@') for qp in ds.findall('./{*}Query/{*}QueryParameters/{*}QueryParameter')]
+    return html.unescape(cmd), qps
+
+def _sql_connect():
+    global _SQL_CONN
+    if _SQL_CONN is not None: return _SQL_CONN
+    conn_str=os.environ.get('DASH_SQL_CONNECTION_STRING','').strip()
+    if not conn_str:
+        raise RuntimeError('DASH_SQL_CONNECTION_STRING is required when DASH_SQL_MODE=1')
+    try:
+        import pyodbc  # optional runtime dependency in SQL mode
+    except ImportError as e:
+        raise RuntimeError('pyodbc is required for DASH_SQL_MODE=1 (install on SQL-enabled host)') from e
+    _SQL_CONN=pyodbc.connect(conn_str, timeout=30)
+    return _SQL_CONN
+
+def _sql_rows_for_csv(name):
+    if name not in _SQL_SOURCE_MAP:
+        return []
+    rdl_file,dataset_name=_SQL_SOURCE_MAP[name]
+    sql,params=_rdl_query_info(rdl_file,dataset_name)
+    start_shift,end_shift=_sql_shift_bounds()
+    pmap={'StartShift':start_shift,'EndShift':end_shift}
+    ordered=[]; bound=sql
+    for p in params:
+        bound=re.sub(rf'@{re.escape(p)}\b','?',bound)
+        ordered.append(pmap.get(p))
+    cur=_sql_connect().cursor()
+    cur.execute(bound,*ordered)
+    cols=[c[0] for c in cur.description]
+    out=[]
+    for row in cur.fetchall():
+        rec={}
+        for i,col in enumerate(cols):
+            v=row[i]
+            if isinstance(v,datetime.datetime):
+                v=v.strftime('%m/%d/%Y %I:%M:%S %p')
+            rec[_normcol(col)]='' if v is None else str(v)
+        out.append(rec)
+    return out
+
 def load_csv(name):
+    if _SQL_MODE:
+        return _sql_rows_for_csv(name)
     path=f'{DATADIR}/{name}'
     if not os.path.exists(path):
         raise FileNotFoundError(
