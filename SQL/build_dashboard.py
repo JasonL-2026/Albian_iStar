@@ -18,8 +18,9 @@ Locked definitions (agreed section-by-section):
                    Above Potential: Sched. Potential → PA → UA → OE rows (Cat 797 availability vs budget
                    CSV, same calc as KPI tab), each bar embeds the top Down/Standby/Delay reason.
 """
-import csv, json, datetime, os, re
+import csv, json, datetime, os, re, html
 from collections import defaultdict
+from xml.etree import ElementTree as ET
 
 # Anchor all paths to THIS script's folder, so the project works from any working directory
 # or after being copied/moved to another computer (no dependency on the current directory).
@@ -30,6 +31,126 @@ NOH_FLOOR_S=150.0            # 2.5 min shovel-load floor
 PITS=['MRM','JPM']
 WF_ROWS=['Payload','Load','Queue','Spot','DumpIdle','Dumping','FullHaul','EmptyHaul']
 LM_KEY={'Load':'Load','Queue':'Queue','Spot':'Spot','DumpIdle':'DumpIdle','Dumping':'Dumping','FullHaul':'Full','EmptyHaul':'Empty'}
+
+# Metadata for waterfall-priority summary (Last 14 Shifts tab)
+# Truck waterfall row keys
+_WF_PRIO_META_TRUCKS={
+    'FullHaul':  {'label':'Trucks — Full Haul',        'tab':'haulage', 'kpis':'Avg Full Haul Duration vs. haul-curve; path speed compliance'},
+    'EmptyHaul': {'label':'Trucks — Empty Haul',        'tab':'haulage', 'kpis':'Avg Empty Haul Duration vs. expected; return-leg speed'},
+    'DumpIdle':  {'label':'Trucks — Dump Idle / Queue', 'tab':'trucks',  'kpis':'Avg QueueTimeDmp vs. budget; crusher/dump PA & UA'},
+    'Dumping':   {'label':'Trucks — Dumping Time',      'tab':'trucks',  'kpis':'Avg DumpingTime vs. budget'},
+    'Queue':     {'label':'Trucks — Queue at Shovel',   'tab':'loading', 'kpis':'Avg QueueTimeShvl vs. budget; truck-match ratio'},
+    'Spot':      {'label':'Trucks — Spot Time',         'tab':'loading', 'kpis':'Avg SpotTime vs. budget; face geometry coaching'},
+    'Load':      {'label':'Trucks — Loading Time',      'tab':'loading', 'kpis':'Avg LoadingTime vs. budget; dig rate vs. TPNOH'},
+    'Payload':   {'label':'Trucks — Payload Variance',  'tab':'shovprod','kpis':'Avg weighed payload vs. 361 t target; 10-10-20 rule compliance'},
+}
+# Shovel waterfall row keys (shovelWF2.rows + availDecomp)
+_WF_PRIO_META_SHOVELS={
+    'Hang':    {'label':'Shovels — Hang Time',       'tab':'shovel2', 'kpis':'Avg Hang Time vs. budget; truck-match ratio; queuing discipline'},
+    'Spot':    {'label':'Shovels — Spot at Shovel',  'tab':'shovel2', 'kpis':'Avg Spot Time vs. budget; face preparation & truck approach'},
+    'Load':    {'label':'Shovels — Load Time',       'tab':'shovel2', 'kpis':'Avg Load Time vs. budget; dig rate vs. TPNOH'},
+    'Payload': {'label':'Shovels — Payload',         'tab':'shovel2', 'kpis':'Avg payload vs. 361 t target; 10-10-20 rule compliance'},
+    '_PA':     {'label':'Shovels — PA (Availability)','tab':'shovel2','kpis':'Shovel PA vs. budget; scheduled & unscheduled downtime'},
+    '_UA':     {'label':'Shovels — UA (Standby)',    'tab':'shovel2', 'kpis':'Shovel UA vs. budget; standby & operator delay hours'},
+    '_OE':     {'label':'Shovels — OE (Utilisation)','tab':'shovel2','kpis':'Shovel OE vs. budget; operational efficiency & delay events'},
+}
+_WF_PRIO_THRESH=7500  # minimum |delta_t| to include in summary
+_REC_WINDOW_SHIFTS=14
+
+def compute_wf_priority_summary(wf, swf=None, shift_count=1):
+    """Build a ranked waterfall-gap summary for the Last 14 Shifts tab.
+
+    Args:
+        wf:  trucksWF dict (must have 'rows', 'potential', 'actual' keys)
+        swf: shovelWF2 dict (optional; adds shovel cycle rows + availDecomp entries)
+        shift_count: number of shifts aggregated (1 = per-shift, 14 = rolling window)
+
+    Returns a dict:
+      {'losses': [...], 'gains': [...], 'potential': int, 'actual': int, 'shiftCount': int}
+    Each item: {component, key, delta_t, priority, tab, kpis}
+    priority: 1=High (|loss|>50k), 2=Medium (15k–50k), 3=Low (7.5k–15k)
+    """
+    potential=wf.get('potential',0) if wf else 0
+    actual=wf.get('actual',0) if wf else 0
+    losses=[]; gains=[]
+
+    def _add(key, meta, delta):
+        if delta is None: return
+        delta_t=round(delta); abs_t=abs(delta_t)
+        if abs_t<_WF_PRIO_THRESH: return
+        item={'component':meta['label'],'key':key,'delta_t':delta_t,'tab':meta['tab'],'kpis':meta['kpis']}
+        if delta_t<0:
+            item['priority']=1 if abs_t>50000 else (2 if abs_t>15000 else 3)
+            losses.append(item)
+        else:
+            item['priority']=0   # gains have no priority colour — shown separately
+            gains.append(item)
+
+    # --- truck waterfall rows ---
+    if wf:
+        rows=wf.get('rows',{})
+        for key,meta in _WF_PRIO_META_TRUCKS.items():
+            _add(key, meta, rows.get(key))
+
+    # --- shovel waterfall rows + availDecomp ---
+    if swf:
+        srows=swf.get('rows',{})
+        for key,meta in _WF_PRIO_META_SHOVELS.items():
+            if key.startswith('_'):
+                # availability decomposition: _PA → pa, _UA → ua, _OE → oe
+                av=swf.get('availDecomp')
+                if av:
+                    ak=key[1:].lower()   # '_PA' → 'pa'
+                    _add(key, meta, av.get(ak,{}).get('t'))
+            else:
+                _add(key, meta, srows.get(key))
+
+    losses.sort(key=lambda x:x['delta_t'])   # largest loss first (most negative)
+    gains.sort(key=lambda x:-x['delta_t'])   # largest gain first
+    return {'losses':losses,'gains':gains,
+            'potential':round(potential),'actual':round(actual),'shiftCount':shift_count}
+
+def merge_avail_decomp(avails):
+    avs=[a for a in avails if a]
+    if not avs: return None
+    out={}
+    for key in ('pa','ua','oe'):
+        t=sum(a.get(key,{}).get('t',0) for a in avs)
+        num=sum(a.get(key,{}).get('num',0.0) for a in avs)
+        den=sum(a.get(key,{}).get('den',0.0) for a in avs)
+        budNum=sum(a.get(key,{}).get('budNum',0.0) for a in avs)
+        budDen=sum(a.get(key,{}).get('budDen',0.0) for a in avs)
+        out[key]={'t':round(t),
+                  'act':round(num/den*100,1) if den>0 else 0.0,
+                  'bud':round(budNum/budDen*100,1) if budDen>0 else 0.0,
+                  'reasons':[],
+                  'num':num,'den':den,'budNum':budNum,'budDen':budDen}
+    return out
+
+def merge_wf_period(wfs):
+    items=[wf for wf in wfs if wf]
+    if not items: return None
+    row_keys=sorted({k for wf in items for k in (wf.get('rows') or {})})
+    rows={k:round(sum((wf.get('rows') or {}).get(k,0) for wf in items)) for k in row_keys}
+    potential=sum(wf.get('potential',0) for wf in items)
+    actual=sum(wf.get('actual',0) for wf in items)
+    n=sum(wf.get('n',0) for wf in items)
+    out={'potential':round(potential),'actual':round(actual),'rows':rows,'n':n,
+         'residual':round(actual-(potential+sum(rows.values())))}
+    av=merge_avail_decomp([wf.get('availDecomp') for wf in items if wf.get('availDecomp')])
+    if av:
+        out['availDecomp']=av
+        out['schedPotential']=round(sum(wf.get('schedPotential',wf.get('potential',0)) for wf in items))
+    else:
+        out['schedPotential']=round(potential)
+    keys=sorted({k for wf in items for k in (wf.get('lm') or {})})
+    if n>0 and keys:
+        out['lm']={k:{
+            'actual':sum(wf['lm'][k]['actual']*wf.get('n',0) for wf in items if (wf.get('lm') or {}).get(k))/n,
+            'target':sum(wf['lm'][k]['target']*wf.get('n',0) for wf in items if (wf.get('lm') or {}).get(k))/n,
+            'unit':next((wf['lm'][k]['unit'] for wf in items if (wf.get('lm') or {}).get(k)),'time')
+        } for k in keys}
+    return out
 CYC=['Queue','Spot','Load','Empty','Full','DumpIdle','Dumping']
 import statistics as _st
 from datetime import datetime as _dtm, timedelta as _td
@@ -86,8 +207,93 @@ DATADIR=os.environ.get('DASH_DATADIR') or f'{BASE}/Data'   # override with DASH_
 _COLRE=re.compile(r'^Dtl_(.*?)(?:_\d+)?$')
 def _normcol(h):   # SSRS exports name columns "Dtl_<Name>_<pos>"; strip that (and BOM) → plain <Name>. Leaves plain headers unchanged.
     h=h.strip().lstrip('﻿'); m=_COLRE.match(h); return m.group(1) if m else h
+_SQL_MODE=os.environ.get('DASH_SQL_MODE','').strip().lower() in ('1','true','yes','on')
+_RDL_NS={'rdl':'http://schemas.microsoft.com/sqlserver/reporting/2008/01/reportdefinition',
+         'rdl16':'http://schemas.microsoft.com/sqlserver/reporting/2016/01/reportdefinition'}
+_SQL_SOURCE_MAP={
+    'AllLoadsDumps.csv':('AllLoadsDumps_git.rdl','dsAllLoadsDumps'),
+    'Statusevents.csv':('Statusevents_git.rdl','dsStatusevents'),
+    'TruckatShovel.csv':('TruckatShovel_git.rdl','dsTruckatShovel'),
+    'TruckAtDump.csv':('trucksatdump_git.rdl','TrucksAtDump'),
+    'TruckAtLubeLand.csv':('TruckAtLubeLand_git.rdl','dsTruckAtLubeLand'),
+    'SystemVsManualFuelAssignments.csv':('SystemVsManualFuelAssignments_git.rdl','dsSystemVsManualFuelAssignments'),
+    'TruckBalance.csv':('TruckBalance_git.rdl','dsTruckBalance'),
+}
+_RDL_CACHE={}
+_SQL_CONN=None
+
+def _sql_shift_bounds():
+    if os.environ.get('DASH_SQL_START_SHIFT') and os.environ.get('DASH_SQL_END_SHIFT'):
+        return int(os.environ['DASH_SQL_START_SHIFT']), int(os.environ['DASH_SQL_END_SHIFT'])
+    lookback=max(1,int(os.environ.get('DASH_SQL_LOOKBACK_DAYS','21')))
+    now=_dtm.now()
+    today=now.date()
+    anchor=today if now.hour>=6 else (today-_td(days=1))
+    end_seq='001' if 6<=now.hour<18 else '002'
+    start_day=anchor-_td(days=lookback)
+    return int(start_day.strftime('%y%m%d')+'001'), int(anchor.strftime('%y%m%d')+end_seq)
+
+def _rdl_root(path):
+    if path not in _RDL_CACHE:
+        _RDL_CACHE[path]=ET.parse(path).getroot()
+    return _RDL_CACHE[path]
+
+def _rdl_query_info(rdl_file, dataset_name):
+    root=_rdl_root(f'{BASE}/Data/RDLs/{rdl_file}')
+    ds=root.find(f".//{{*}}DataSet[@Name='{dataset_name}']")
+    if ds is None: raise KeyError(f'Dataset {dataset_name} not found in {rdl_file}')
+    cmd=(ds.findtext('./{*}Query/{*}CommandText') or '').strip()
+    qps=[qp.get('Name','').lstrip('@') for qp in ds.findall('./{*}Query/{*}QueryParameters/{*}QueryParameter')]
+    return html.unescape(cmd), qps
+
+def _sql_connect():
+    global _SQL_CONN
+    if _SQL_CONN is not None: return _SQL_CONN
+    conn_str=os.environ.get('DASH_SQL_CONNECTION_STRING','').strip()
+    if not conn_str:
+        raise RuntimeError('DASH_SQL_CONNECTION_STRING is required when DASH_SQL_MODE=1')
+    try:
+        import pyodbc  # optional runtime dependency in SQL mode
+    except ImportError as e:
+        raise RuntimeError('pyodbc is required for DASH_SQL_MODE=1 (install on SQL-enabled host)') from e
+    _SQL_CONN=pyodbc.connect(conn_str, timeout=30)
+    return _SQL_CONN
+
+def _sql_rows_for_csv(name):
+    if name not in _SQL_SOURCE_MAP:
+        return []
+    rdl_file,dataset_name=_SQL_SOURCE_MAP[name]
+    sql,params=_rdl_query_info(rdl_file,dataset_name)
+    start_shift,end_shift=_sql_shift_bounds()
+    pmap={'StartShift':start_shift,'EndShift':end_shift}
+    ordered=[]; bound=sql
+    for p in params:
+        bound=re.sub(rf'@{re.escape(p)}\\b','?',bound)
+        ordered.append(pmap.get(p))
+    cur=_sql_connect().cursor()
+    cur.execute(bound,*ordered)
+    cols=[c[0] for c in cur.description]
+    out=[]
+    for row in cur.fetchall():
+        rec={}
+        for i,col in enumerate(cols):
+            v=row[i]
+            if isinstance(v,datetime.datetime):
+                v=v.strftime('%m/%d/%Y %I:%M:%S %p')
+            rec[_normcol(col)]= '' if v is None else str(v)
+        out.append(rec)
+    return out
+
 def load_csv(name):
-    with open(f'{DATADIR}/{name}',encoding='utf-8-sig',newline='') as f:
+    if _SQL_MODE:
+        return _sql_rows_for_csv(name)
+    path=f'{DATADIR}/{name}'
+    if not os.path.exists(path):
+        low=name.lower()
+        for fn in os.listdir(DATADIR):
+            if fn.lower()==low:
+                path=f'{DATADIR}/{fn}'; break
+    with open(path,encoding='utf-8-sig',newline='') as f:
         rdr=csv.reader(f)
         try: hdr=[_normcol(c) for c in next(rdr)]
         except StopIteration: return []
@@ -114,6 +320,7 @@ for _r in tad_all:   # tolerate the 'd'-prefixed export schema (dShiftId, dDumpL
     for _k in list(_r.keys()):
         if len(_k)>=2 and _k[0]=='d' and _k[1].isupper(): _r.setdefault(_k[1:], _r[_k])
 lube_all=load_csv('TruckAtLubeLand.csv')
+fuel_assign_all=load_csv('SystemVsManualFuelAssignments.csv')
 def _lube_ok(r):   # ignore FUEL&LUBE / FUEL BREAK events under 20 s (counted separately)
     return not (r['Reason'] in ('FUEL&LUBE','FUEL BREAK') and num(r['Duration'])<20)
 def lube_trend(pits):   # cross-shift (all shifts) lube minutes by reason + expected, filtered by pit
@@ -296,7 +503,7 @@ def build_shift(sm):
         nonprod=defaultdict(float); ton=defaultdict(float); nld=defaultdict(int); trkq=trki=0.0
         shov_ton=defaultdict(float); shov_pit=defaultdict(lambda:defaultdict(float)); shov_mat=defaultdict(lambda:defaultdict(float))
         trk_ton=defaultdict(float); trk_shov=defaultdict(lambda:defaultdict(float)); trk_pit=defaultdict(lambda:defaultdict(float))
-        shov_dump=defaultdict(lambda:defaultdict(lambda:[0.0,0,0.0,0.0,0.0,[0.0]*12,[0]*12]))   # shovel->dump->[Σ full-dist(m), n, Σ ton, Σ cyc_h, Σ target tonnes, cyc-sec/hr, loads/hr]
+        shov_dump=defaultdict(lambda:defaultdict(lambda:[0.0,0,0.0,0.0,0.0,[0.0]*12,[0]*12,[0.0]*12]))   # shovel->dump->[Σ full-dist(m), n, Σ ton, Σ cyc_h, Σ target tonnes, cyc-sec/hr, loads/hr, Σ ton/hr]
         for r in loads:
             if r['LoadPit'] not in pits: continue
             s=stype(r['Excav'])
@@ -316,7 +523,7 @@ def build_shift(sm):
                 tgtTP=cv(r['LoadPit'],r['MaterialGroupName'],hd_of(r)).get('TPNOH',0.0)   # haul-curve target TPNOH for this load's haul distance
                 dd=shov_dump[r['Excav']][dl]; dd[0]+=fd; dd[1]+=1; dd[2]+=T; dd[3]+=cyc_h; dd[4]+=tgtTP*cyc_h
                 _dt=_dtp(r['DumpingTimestamp']); _mn=mfs(_dt) if _dt else None   # bucket cycle time by dump hour
-                if _mn is not None and 0<=_mn<720: _hh=int(_mn//60); dd[5][_hh]+=cyc_h*3600.0; dd[6][_hh]+=1
+                if _mn is not None and 0<=_mn<720: _hh=int(_mn//60); dd[5][_hh]+=cyc_h*3600.0; dd[6][_hh]+=1; dd[7][_hh]+=T
         def _shovunit(u,t):   # per-shovel TPNOH (actual = ton ÷ Ready hrs) + budget (by type·dominant pit) + majority material; grouped by type
             typ='Cable' if stype(u)=='BE495' else ('Hydraulic' if stype(u)=='HIT8000' else '?')
             dompit=max(shov_pit[u],key=shov_pit[u].get) if shov_pit[u] else pits[0]
@@ -343,7 +550,8 @@ def build_shift(sm):
                 actTP=(v[2]/cyc) if cyc>0 else 0.0     # actual tonnes ÷ cycle hours
                 tgtTP=(v[4]/cyc) if cyc>0 else 0.0     # cycle-weighted haul-curve target TPNOH
                 hourly=[round(v[5][hh]/v[6][hh]) if v[6][hh] else None for hh in range(12)]   # avg truck cycle sec/hr
-                lst.append({'dump':dl,'n':v[1],'km':round(km,1),'actTP':round(actTP),'tgtTP':round(tgtTP),'dTon':round(v[2]-v[4]),'hourly':hourly})
+                hourlyTP=[round(v[7][hh]/(v[5][hh]/3600.0)) if v[5][hh]>0 else None for hh in range(12)]   # TPNOH/hr = tonnes ÷ cycle-hours
+                lst.append({'dump':dl,'n':v[1],'km':round(km,1),'actTP':round(actTP),'tgtTP':round(tgtTP),'dTon':round(v[2]-v[4]),'hourly':hourly,'hourlyTP':hourlyTP})
             lst.sort(key=lambda x:x['dTon']); return lst   # Δ tonnes lowest → highest
         trkUnits=[{'unit':sv,'grp':_svtype(sv),'mat':'','n':n,'tpnoh':round(stp/n),'btpnoh':(round(sbt/nb) if nb else None),'dumps':_svdumps(sv)}
                   for sv,(stp,n,sbt,nb) in _svacc.items() if n>0]
@@ -463,7 +671,7 @@ def build_shift(sm):
                 hist[bi]+=1
         faultySensor=[{'eqmt':k,'type':v[2],'reads':v[0],'value':round(v[1])}
                       for k,v in sorted(fsm.items(),key=lambda x:(x[1][2],x[0]))]
-        lb=sorted(Lv,key=lambda r:-(num(r['Duration'])-num(r['ExpectedDuration'])))
+        lb=sorted(Lv,key=lambda r:-(num(r['Duration'])-num(r['ExpectedDuration'])))[:12]
         leaderboard=[{'eqmt':r['Eqmt'],'type':r['Eqmttype'],'reason':r['Reason'],
                       'actual':round(num(r['Duration'])),'exp':round(num(r['ExpectedDuration'])),
                       'over':round(num(r['Duration'])-num(r['ExpectedDuration'])),
@@ -487,9 +695,22 @@ def build_shift(sm):
         hourly={'hours':[f"{(base+i)%24:02d}:00" for i in range(12)],'fuel':[round(x,1) for x in hb['fuel']],
                 'wait':[round(x,1) for x in hb['wait']],'brk':[round(x,1) for x in hb['brk']],
                 'exp':[round(x,1) for x in hb['exp']],'occ':occ,'occWait':occWait}
+        # ---- fuel assignment automation (System vs Manual) ----
+        fa=[r for r in fuel_assign_all if r.get('ShiftID')==sid and any(p in (r.get('ToLocation') or '') for p in pits)]
+        fa_sys=[r for r in fa if r.get('AssignType')=='System Fuel Assignment']
+        fa_man_raw=[r for r in fa if r.get('AssignType')=='Dispatcher Fuel Assignment']
+        fa_man_latest={}
+        for r in fa_man_raw:
+            tk=r.get('messagebody',''); ts=_dtp(r.get('TIMESTAMP',''))
+            if tk and ts and (tk not in fa_man_latest or ts>fa_man_latest[tk][1]):
+                fa_man_latest[tk]=(r,ts)
+        fa_sys_n=len(fa_sys); fa_man_n=len(fa_man_latest); fa_tot=fa_sys_n+fa_man_n
+        fuelAssign={'system':fa_sys_n,'manual':fa_man_n,'total':fa_tot,
+                    'sysPct':round(fa_sys_n/fa_tot*100) if fa_tot else 0,
+                    'manPct':round(fa_man_n/fa_tot*100) if fa_tot else 0}
         return {'reasons':reasons,'fuelHist':hist,'fuelEdges':FEDGES,'faulty':faulty,'zero':zero,'shortCount':short,
                 'leaderboard':leaderboard,'byClass':byClass,'n':len(Lv),'hourly':hourly,
-                'faultySensor':faultySensor}
+                'faultySensor':faultySensor,'fuelAssign':fuelAssign}
 
     # ---- aggregators (close over the shift locals) ----
     def agg_haul(pits):
@@ -611,9 +832,15 @@ def build_shift(sm):
             other=sum(v for k,v in d[limit:])
             if other>0.5: out.append(['Other',round(other,1)])
             return out
-        return {'pa':{'t':round(pa_t),'act':round(PAa,1),'bud':round(PAb,1),'reasons':reasons_of('Down')},
-                'ua':{'t':round(ua_t),'act':round(UAa,1),'bud':round(UAb,1),'reasons':reasons_of('Standby')},
-                'oe':{'t':round(oe_t),'act':round(OEa,1),'bud':round(OEb,1),'reasons':reasons_of('Delay')}}
+        pbud=sum(bud(p,'PA797')*bud(p,'NOH797') for p in pits)
+        ubud=sum(bud(p,'UA797')*bud(p,'NOH797') for p in pits)
+        ebud=sum(bud(p,'OE797')*bud(p,'NOH797') for p in pits)
+        return {'pa':{'t':round(pa_t),'act':round(PAa,1),'bud':round(PAb,1),'reasons':reasons_of('Down'),
+                      'num':AR+ADe+AS,'den':TH,'budNum':pbud,'budDen':w},
+                'ua':{'t':round(ua_t),'act':round(UAa,1),'bud':round(UAb,1),'reasons':reasons_of('Standby'),
+                      'num':AR+ADe,'den':AR+ADe+AS,'budNum':ubud,'budDen':w},
+                'oe':{'t':round(oe_t),'act':round(OEa,1),'bud':round(OEb,1),'reasons':reasons_of('Delay'),
+                      'num':AR,'den':AR+ADe,'budNum':ebud,'budDen':w}}
     def scale_av(av,share):
         # allocate fleet PA/UA/OE tonnage effects to a material by its potential share (%, reasons unchanged)
         if not av: return None
@@ -655,7 +882,7 @@ def build_shift(sm):
         lanes.sort(key=lambda x:(x['shovel'],-x['pot']))
         rn=sum(ratio_n[p] for p in pits); rd=sum(ratio_d[p] for p in pits)
         schedDelta=(av['pa']['t']+av['ua']['t']+av['oe']['t']) if av else 0.0
-        return {'potential':pot,'actual':act,'rows':rows,'residual':residual,'byMaterial':mat,'lm':_lm(tops),
+        return {'potential':pot,'actual':act,'rows':rows,'residual':residual,'byMaterial':mat,'lm':_lm(tops),'n':sum(s['n'] for s in tops),
                 'availDecomp':av,'schedPotential':pot-schedDelta,
                 'nohTonnes':noh_t,'lanes':lanes,'nohPct':an/bn*100 if bn else 0,'nohActual':an,'nohBudget':bn,'emptyFullRatio':rn/rd if rd else 0}
     def shovel_seg_decomp(pits):
@@ -667,6 +894,7 @@ def build_shift(sm):
         psum=defaultdict(lambda:[0.0,0])
         for r in loads:
             if r['LoadPit'] not in pits: continue
+            if (r['DumpLocation'] or '').upper().startswith('IN'): continue   # match truck-waterfall exclusion of internal roads/berms/pads
             s=stype(r['Excav'])
             if not s: continue
             mat=r['MaterialGroupName']; T=num(r['Tonnage'])
@@ -686,6 +914,7 @@ def build_shift(sm):
         tot=newacc(); bymat=defaultdict(newacc); byunit=defaultdict(newacc); umeta={}; umat=defaultdict(lambda:defaultdict(float))
         for r in loads:
             if r['LoadPit'] not in pits: continue
+            if (r['DumpLocation'] or '').upper().startswith('IN'): continue   # match truck-waterfall exclusion of internal roads/berms/pads
             s=stype(r['Excav'])
             if not s: continue
             mat=r['MaterialGroupName']; T=num(r['Tonnage']); key=(s,r['LoadPit'],mat)
@@ -748,9 +977,12 @@ def build_shift(sm):
             other=sum(v for k,v in d[limit:])
             if other>0.5: out.append(['Other',round(other,1)])
             return out
-        return {'pa':{'t':round(pa_t),'act':round(PAa,1),'bud':round(PAb,1),'reasons':reasons_of('Down')},
-                'ua':{'t':round(ua_t),'act':round(UAa,1),'bud':round(UAb,1),'reasons':reasons_of('Standby')},
-                'oe':{'t':round(oe_t),'act':round(OEa,1),'bud':round(OEb,1),'reasons':reasons_of('Delay')}}
+        return {'pa':{'t':round(pa_t),'act':round(PAa,1),'bud':round(PAb,1),'reasons':reasons_of('Down'),
+                      'num':AR+ADe+AS,'den':TH,'budNum':PAbw,'budDen':wsum},
+                'ua':{'t':round(ua_t),'act':round(UAa,1),'bud':round(UAb,1),'reasons':reasons_of('Standby'),
+                      'num':AR+ADe,'den':AR+ADe+AS,'budNum':UAbw,'budDen':wsum},
+                'oe':{'t':round(oe_t),'act':round(OEa,1),'bud':round(OEb,1),'reasons':reasons_of('Delay'),
+                      'num':AR,'den':AR+ADe,'budNum':OEbw,'budDen':wsum}}
     def avail_decomp_unit(u,pit):
         # Per-unit PA/UA/OE decomposition (same sequential method as the fleet aggregate, one Eqmt).
         # Total/calendar hours TH = Ready+Delay+Standby+Down; GOH=Ready+Delay; NOH=Ready.
@@ -822,7 +1054,7 @@ def build_shift(sm):
         lx=defaultdict(list);ly=defaultdict(list);dxx=defaultdict(list);dyy=defaultdict(list)
         ltons=defaultdict(lambda:defaultdict(float));dtons=defaultdict(float);ltp=defaultdict(lambda:[0.0,0.0])
         full=defaultdict(lambda:[0.0,0,defaultdict(int),0,0.0,0.0])   # tons, count, matcounts, lockedCount, Σ full-haul dist(m), Σ expected dist(m)
-        prev_full=defaultdict(lambda:[0.0,0,defaultdict(int),0])          # (prevDump,shovel) → [tons, count, {mat:count}, lockedCount]
+        prev_full=defaultdict(lambda:[0.0,0,defaultdict(int),0,0.0])      # (prevDump,shovel) → [tons, count, {mat:count}, lockedCount, Σ empty-haul dist(m)]
         for r in rs:
             # left node = the actual shovel (Excav) so the placement axis always reads as a shovel and each
             # shovel's digs (bench + stockpile re-handle) aggregate into one node; fall back to LoadLocation if blank
@@ -838,7 +1070,7 @@ def build_shift(sm):
             # prev-dump: where the truck was before arriving at this shovel (from PREV_DUMP global dict)
             pd=PREV_DUMP.get(id(r))
             if pd and pd!='?':
-                pf=prev_full[(pd,L)]; pf[0]+=t; pf[1]+=1; pf[2][m]+=1
+                pf=prev_full[(pd,L)]; pf[0]+=t; pf[1]+=1; pf[2][m]+=1; pf[4]+=num(r['EmptyHaullDistance'])
                 if lk: pf[3]+=1
         allx=sorted(z for vs in list(lx.values())+list(dxx.values()) for z in vs if z>0)
         ally=sorted(z for vs in list(ly.values())+list(dyy.values()) for z in vs if z>0)
@@ -856,7 +1088,7 @@ def build_shift(sm):
         lset={n['id'] for n in loadN}; dset={n['id'] for n in dumpN}
         fF=[{'from':k[0],'to':k[1],'tons':round(v[0]),'mat':max(v[2],key=v[2].get),'n':v[1],'nlock':v[3],'km':round(v[4]/v[1]/1000,1) if v[1] else 0,'kmE':round(v[5]/v[1]/1000,1) if v[1] else 0} for k,v in full.items() if k[0] in lset and k[1] in dset]
         # prev-dump flows: (prevDump,shovel) pairs where shovel is a known load node (≥2 loads for signal)
-        prevF=[{'from':k[0],'to':k[1],'tons':round(v[0]),'mat':max(v[2],key=v[2].get),'n':v[1],'nlock':v[3]}
+        prevF=[{'from':k[0],'to':k[1],'tons':round(v[0]),'mat':max(v[2],key=v[2].get),'n':v[1],'nlock':v[3],'km':round(v[4]/v[1]/1000,1) if v[1] else 0}
                for k,v in prev_full.items() if k[1] in lset and v[1]>=2]
         flowcache[pit]={'loadNodes':loadN,'dumpNodes':dumpN,'fullFlows':fF,'prevFlows':prevF}
     def agg_flows(pits):
@@ -928,6 +1160,7 @@ def build_shift(sm):
         avgh={k:(round(hsh[k][0]/hsh[k][1]/60,1) if hsh[k][1] else None) for k in eq}
         # per-shovel hourly TPNOH = tonnes loaded ÷ net operating (Ready) hours, per hour bucket
         sh_ton_hr=defaultdict(lambda:[0.0]*12)
+        sh_hang_hr=defaultdict(lambda:[0.0]*12); sh_queue_hr=defaultdict(lambda:[0.0]*12); sh_hang_n=defaultdict(lambda:[0]*12)   # hang/queue seconds + load count per hour
         for r in Lr:
             ex=r['Excav']
             if ex[:2] not in ('S0','S8'): continue
@@ -935,7 +1168,9 @@ def build_shift(sm):
             if not d: continue
             mn=mfs(d)
             if mn is None or mn<0 or mn>=720: continue
-            sh_ton_hr[ex][int(mn//60)]+=num(r['Tonnage'])
+            _hb=int(mn//60)
+            sh_ton_hr[ex][_hb]+=num(r['Tonnage'])
+            sh_hang_hr[ex][_hb]+=num(r['HangTime']); sh_queue_hr[ex][_hb]+=num(r['QueueTimeShvl']); sh_hang_n[ex][_hb]+=1
         sh_op_hr=defaultdict(lambda:[0.0]*12)   # operating (Ready) minutes per hour bucket
         for k in eq:
             for s in seg[k]:
@@ -946,7 +1181,10 @@ def build_shift(sm):
                     bend=(b+1)*60; segend=min(en,bend)
                     sh_op_hr[k][b]+=(segend-st); st=segend; b+=1
         tphr={k:[ (round(sh_ton_hr[k][i]/(sh_op_hr[k][i]/60.0)) if sh_op_hr[k][i]>3 else None) for i in range(12) ] for k in eq}
-        timeline={'equip':eq,'seg':{k:seg[k] for k in eq},'queue':q,'qmax':qmax,'mat':smat,'base':base,'avgq':avgq,'avgh':avgh,'tphr':tphr}
+        tonhr={k:[ (round(sh_ton_hr[k][i]) if sh_ton_hr[k][i]>0 else None) for i in range(12) ] for k in eq}   # total tonnes/hr
+        hanghr={k:[ (round(sh_hang_hr[k][i]/sh_hang_n[k][i]/60,1) if sh_hang_n[k][i] else None) for i in range(12) ] for k in eq}   # avg hang min/load per hr
+        queuehr={k:[ (round(sh_queue_hr[k][i]/sh_hang_n[k][i]/60,1) if sh_hang_n[k][i] else None) for i in range(12) ] for k in eq}   # avg queue min/load per hr
+        timeline={'equip':eq,'seg':{k:seg[k] for k in eq},'queue':q,'qmax':qmax,'mat':smat,'base':base,'avgq':avgq,'avgh':avgh,'tphr':tphr,'tonhr':tonhr,'hanghr':hanghr,'queuehr':queuehr}
         # timeline (Cat 797 haul trucks that actually hauled this view) — status segments, real TimeStamp
         activeTrk={r['Truck'] for r in t1 if r['LoadPit'] in pits}
         tseg=defaultdict(list); _tcum=defaultdict(float)
@@ -1091,6 +1329,9 @@ def build_shift(sm):
             out.sort(key=lambda x:-x['avg']); return out
         hangbox=_boxset(hg,hgb,hgc); loadbox=_boxset(ld,ldb,ldc); spotbox=_boxset(sp,spb,spc)
         queuebox=_boxset(qv,qb,qc); idlebox=_boxset(iv,ib,ic); dumpbox=_boxset(dv,db,dc); fullbox=_boxset(fv,fb,fc)
+        # Shovel Waterfall box plots (payload / spot / load / hang) ordered by shovel ID (natural sort); truck-tab boxes keep their avg order
+        _shk=lambda x:[int(t) if t.isdigit() else t for t in re.split(r'(\d+)',str(x['shovel']))]
+        for _b in (pay,hangbox,loadbox,spotbox): _b.sort(key=_shk)
         return {'cumulative':cumulative,'hourly':hourly,'timeline':timeline,'truckTimeline':truckTimeline,'pareto':pareto,'paretoTrk':paretoTrk,'paretoShv':paretoShv,'delayVar':delayVar,'delayVarTrk':delayVarTrk,'delayVarShv':delayVarShv,'payload':pay,'payloadTarget':PAYLOAD_TARGET,'hangbox':hangbox,'loadbox':loadbox,'spotbox':spotbox,'queuebox':queuebox,'idlebox':idlebox,'dumpbox':dumpbox,'fullbox':fullbox}
 
     def delaysStandby(pits):
@@ -1596,6 +1837,157 @@ def build_shift(sm):
         return {'hours':[f"{(base+i)%24:02d}" for i in range(12)],
                 'trucks':_tr(gohHr),'shovels':_sh(gohHr),'trucksP':_tr(nohHr),'shovelsP':_sh(nohHr),
                 'cable':_g(gohHr,'Cable shovel'),'hydraulic':_g(gohHr,'Hydraulic shovel')}
+
+    def compute_shift_recommendations(pits, fx_data, all_loads, t1_loads):
+        """Compute cycle-component and balance gap recommendations for one view (pit subset).
+
+        Returns a list of dicts sorted by estimated tonnes-at-risk (highest first). Each dict:
+          {priority, area, measure, actual_s, baseline_s, actual_label, baseline_label,
+           gap_label, tonnes_at_risk, tab, detail}
+        priority: 1 (High) / 2 (Medium) / 3 (Low) matching JS colour coding.
+        """
+        # --- helpers ---
+        def _avg(seq):
+            s=[x for x in seq if x is not None]; return sum(s)/len(s) if s else 0.0
+        def _fmts(sec):
+            m=int(abs(sec))//60; s=int(abs(sec))%60
+            return ('-' if sec<0 else '')+f"{m}:{s:02d}"
+        def _priority(frac_cycle):
+            if frac_cycle>0.10: return 1
+            if frac_cycle>0.05: return 2
+            return 3
+
+        rs=[r for r in all_loads if r['LoadPit'] in pits and not r['DumpLocation'].startswith('IN')]
+        t1r=[r for r in t1_loads if r['LoadPit'] in pits and not r['DumpLocation'].startswith('IN')]
+        if not t1r: return []
+
+        # avg full truck cycle (all 8 components)
+        _cyc_keys=['EmptyHaulDuration','SpotTime','LoadingTime','QueueTimeShvl',
+                   'FullHaulDuration','QueueTimeDmp','DumpSpotTime','DumpingTime']
+        cyc_vals=[sum(num(r[k]) for k in _cyc_keys) for r in t1r]
+        avg_cycle=_avg(cyc_vals) or 1.0
+        shift_tonnes=sum(num(r['Tonnage']) for r in t1r)
+
+        recs=[]
+        def _add(measure, area, actual_s, baseline_s, tab, detail):
+            gap_s=actual_s-baseline_s
+            if gap_s<=0: return  # at or under budget — no recommendation
+            tonnes_at_risk=round(gap_s/avg_cycle*shift_tonnes)
+            frac=gap_s/avg_cycle
+            recs.append({
+                'priority':_priority(frac),
+                'area':area,
+                'measure':measure,
+                'actual_s':round(actual_s,1),
+                'baseline_s':round(baseline_s,1),
+                'actual_label':_fmts(actual_s),
+                'baseline_label':_fmts(baseline_s),
+                'gap_label':'+'+_fmts(gap_s),
+                'tonnes_at_risk':tonnes_at_risk,
+                'tab':tab,
+                'detail':detail,
+            })
+
+        # --- 1. Full Haul vs haul-curve expected ---
+        fh_gaps=[num(r['FullHaulDuration'])-num(r['FullExpectedDuration'])
+                 for r in t1r if num(r['FullHaulDuration'])>0 and num(r['FullExpectedDuration'])>0]
+        avg_fh_actual=_avg([num(r['FullHaulDuration']) for r in t1r if num(r['FullHaulDuration'])>0])
+        avg_fh_expected=_avg([num(r['FullExpectedDuration']) for r in t1r if num(r['FullExpectedDuration'])>0])
+        if fh_gaps and _avg(fh_gaps)>30:
+            _add('Full Haul Duration','Haulage (Trucks)',avg_fh_actual,avg_fh_expected,'haulage',
+                 'Loaded travel running over haul-curve target. Check road conditions, speed compliance, routing.')
+
+        # --- 2. Empty Haul vs expected ---
+        eh_gaps=[num(r['EmptyHaulDuration'])-num(r['EmptyExpectedDuration'])
+                 for r in t1r if num(r['EmptyHaulDuration'])>0 and num(r['EmptyExpectedDuration'])>0]
+        avg_eh_actual=_avg([num(r['EmptyHaulDuration']) for r in t1r if num(r['EmptyHaulDuration'])>0])
+        avg_eh_expected=_avg([num(r['EmptyExpectedDuration']) for r in t1r if num(r['EmptyExpectedDuration'])>0])
+        if eh_gaps and _avg(eh_gaps)>30:
+            _add('Empty Haul Duration','Haulage (Trucks)',avg_eh_actual,avg_eh_expected,'haulage',
+                 'Empty return travel running over expected. Check road surface, haul road obstructions.')
+
+        # --- 3. Shovel Hang Time vs budget ---
+        # Budget hang = budget cycle − spot_b − load_b (per pit/material; use tonnage-weighted average)
+        hang_bud_sum=0.0; hang_bud_n=0
+        for r in rs:
+            pit=r['LoadPit']; mat=r['MaterialGroupName']
+            f_mat=fx_data[pit].get(mat); s=stype(r['Excav'])
+            if not f_mat or not s: continue
+            tp=shTPNOH[pit].get((s,mat),0.0)
+            if tp<=0: continue
+            spot_b=f_mat['Spot']*60; load_b=LMIN(f_mat,SHVTYPE.get(s,'Average'))*60
+            c_b=PAYLOAD_TARGET*3600.0/tp; hang_b=max(0.0,c_b-spot_b-load_b)
+            hang_bud_sum+=hang_b; hang_bud_n+=1
+        avg_hang_actual=_avg([num(r['HangTime']) for r in rs if num(r['HangTime'])>=0])
+        avg_hang_bud=hang_bud_sum/hang_bud_n if hang_bud_n else 180.0
+        if avg_hang_actual>180 and avg_hang_actual>avg_hang_bud:
+            _add('Shovel Hang Time','Loading (Shovels)',avg_hang_actual,avg_hang_bud,'loading',
+                 'Shovels idling waiting for trucks. Fleet is under-trucked or truck assignment gaps exist.')
+
+        # --- 4. Dump Queue (QueueTimeDmp) vs budget DumpIdle ---
+        dq_bud_vals=[]
+        for r in t1r:
+            pit=r['LoadPit']; mat=r['MaterialGroupName']
+            f_mat=fx_data[pit].get(mat)
+            if f_mat: dq_bud_vals.append(f_mat['DumpIdle']*60)
+        avg_dq_actual=_avg([num(r['QueueTimeDmp']) for r in t1r])
+        avg_dq_bud=_avg(dq_bud_vals) if dq_bud_vals else 60.0
+        if avg_dq_actual>avg_dq_bud+30:
+            _add('Dump Queue Time','Dump / Crusher',avg_dq_actual,avg_dq_bud,'trucks',
+                 'Trucks queuing at dump longer than budget. Check crusher availability or truck bunching.')
+
+        # --- 5. Loading Time vs budget ---
+        lt_bud_vals=[]
+        for r in t1r:
+            pit=r['LoadPit']; mat=r['MaterialGroupName']
+            f_mat=fx_data[pit].get(mat); s=stype(r['Excav'])
+            if f_mat and s: lt_bud_vals.append(LMIN(f_mat,SHVTYPE.get(s,'Average'))*60)
+        avg_lt_actual=_avg([num(r['LoadingTime']) for r in t1r if num(r['LoadingTime'])>0])
+        avg_lt_bud=_avg(lt_bud_vals) if lt_bud_vals else 180.0
+        if avg_lt_actual>avg_lt_bud*1.10:
+            _add('Loading Time','Loading (Shovels)',avg_lt_actual,avg_lt_bud,'loading',
+                 'Average loading time exceeds budget by >10 %. Check dig face conditions and bucket fill factor.')
+
+        # --- 6. Spot Time vs budget ---
+        sp_bud_vals=[]
+        for r in t1r:
+            pit=r['LoadPit']; mat=r['MaterialGroupName']
+            f_mat=fx_data[pit].get(mat)
+            if f_mat: sp_bud_vals.append(f_mat['Spot']*60)
+        avg_sp_actual=_avg([num(r['SpotTime']) for r in t1r if num(r['SpotTime'])>0])
+        avg_sp_bud=_avg(sp_bud_vals) if sp_bud_vals else 72.0
+        if avg_sp_actual>avg_sp_bud+20:
+            _add('Spot Time','Loading (Shovels)',avg_sp_actual,avg_sp_bud,'loading',
+                 'Trucks taking longer than budget to position at shovel. Coaching on approach / face geometry.')
+
+        # --- 7. Truck-Shovel Balance (hang/queue ratio) ---
+        avg_queue_shvl=_avg([num(r['QueueTimeShvl']) for r in t1r])
+        if avg_queue_shvl>0:
+            ratio=avg_hang_actual/avg_queue_shvl
+            if ratio>2.0:
+                # encode as a gap: ratio excess expressed in hang seconds above a "balanced" target of 1.5×queue
+                balanced_hang=avg_queue_shvl*1.5
+                gap_hang=avg_hang_actual-balanced_hang
+                if gap_hang>0:
+                    tonnes_risk=round(gap_hang/avg_cycle*shift_tonnes)
+                    frac=gap_hang/avg_cycle
+                    recs.append({
+                        'priority':_priority(frac),
+                        'area':'Truck / Shovel Balance',
+                        'measure':'Hang/Queue Ratio (Under-Trucked)',
+                        'actual_s':round(avg_hang_actual,1),
+                        'baseline_s':round(balanced_hang,1),
+                        'actual_label':f"ratio {ratio:.1f}× (hang {_fmts(avg_hang_actual)}, queue {_fmts(avg_queue_shvl)})",
+                        'baseline_label':'ratio ≤ 1.5×',
+                        'gap_label':f"+{ratio-1.5:.1f}\u00d7 over balanced",
+                        'tonnes_at_risk':tonnes_risk,
+                        'tab':'balance',
+                        'detail':'Shovels idling far more than trucks queuing. Add truck(s) or re-assign to this shovel area.',
+                    })
+
+        recs.sort(key=lambda x:-x['tonnes_at_risk'])
+        return recs
+
     views={}
     for name,pits in [('MRM',['MRM']),('JPM',['JPM']),('Combined',PITS)]:
         vw={'haulage':agg_haul(pits),'loading':agg_load(pits),'truckBalance':agg_tb(pits),
@@ -1604,6 +1996,9 @@ def build_shift(sm):
                      'delaysStandby':delaysStandby(pits),'hourlyPerf':compute_hourlyPerf(pits),'shovelProd':compute_shovelProd(pits),'truckProd':compute_truckProd(pits),'shiftStats':compute_shiftStats(pits),'analytics':compute_analytics(pits)}
         vw['fleetMatch']=agg_fleetMatch(pits,vw['trucksWF'],vw['shovelWF2'],vw['truckBalance'])
         vw['opDeployed']=agg_ophourly(pits)
+        vw['shiftRecs']=compute_shift_recommendations(pits,fx,loads,t1)
+        vw['wfPrioritySummary']={'perShift':compute_wf_priority_summary(vw['trucksWF'],swf=vw.get('shovelWF2')),'last14':None}
+        vw['recommendationProdWF']={'last14':None}
         views[name]=vw
     # ---------- appendix: all target / budget numbers used, for this shift ----------
     def _oe(nohc,gohc,p): g=bud(p,gohc); return (bud(p,nohc)/g*100) if g>0 else None
@@ -1679,6 +2074,36 @@ for sid in byShift:
         c['reqFuture']=round(req) if req is not None else None
         c['monthBudget']=round(mbud); c['monthActual']=round(act); c['futureShifts']=future; c['monthShifts']=total
 
+# ---- toggle-aligned last-14-shifts rollups (selected shift vs trailing window, plus per-crew) ----
+_all_sids=sorted(byShift.keys(),reverse=True)   # most-recent first
+# Build per-crew shift-id lists (most-recent first, matching SHIFTS ordering)
+_crew_sids_map=defaultdict(list)
+for _sm in SHIFTS:
+    _c=_sm.get('crew','').strip()
+    if _c: _crew_sids_map[_c].append(_sm['id'])
+
+for vn in _VPITS:
+    for i,sid in enumerate(_all_sids):
+        v=byShift[sid]['views'].get(vn)
+        if not v: continue
+        window=[wsid for wsid in _all_sids[i:i+_REC_WINDOW_SHIFTS] if byShift[wsid]['views'].get(vn)]
+        twf=merge_wf_period([byShift[wsid]['views'][vn].get('trucksWF') for wsid in window])
+        swf=merge_wf_period([byShift[wsid]['views'][vn].get('shovelWF2') for wsid in window])
+        if v.get('wfPrioritySummary'):
+            v['wfPrioritySummary']['last14']=compute_wf_priority_summary(twf,swf=swf,shift_count=len(window)) if twf else None
+        # Per-crew last-14 windows: for each crew take their own last 14 shifts at/before this shift
+        crew_data={}
+        for _crew,_csids in _crew_sids_map.items():
+            cw=[csid for csid in _csids if csid<=sid and byShift[csid]['views'].get(vn)][:_REC_WINDOW_SHIFTS]
+            if not cw: continue
+            ctwf=merge_wf_period([byShift[csid]['views'][vn].get('trucksWF') for csid in cw])
+            cswf=merge_wf_period([byShift[csid]['views'][vn].get('shovelWF2') for csid in cw])
+            crew_data[_crew]={
+                'trucksWF':ctwf,'shovelWF2':cswf,'shiftCount':len(cw),
+                'wfPrioritySummary':compute_wf_priority_summary(ctwf,swf=cswf,shift_count=len(cw)) if ctwf else None,
+            }
+        v['recommendationProdWF']={'last14':{'trucksWF':twf,'shovelWF2':swf,'shiftCount':len(window)},'perCrew':crew_data}
+
 out={'meta':{'generated':datetime.datetime.now().strftime('%Y-%m-%d %H:%M'),'payloadTarget':PAYLOAD_TARGET},
      'shifts':shiftlist,'defaultShift':(SHIFTS[0]['id'] if SHIFTS else None),'byShift':byShift}
 json.dump(out,open(f'{BASE}/dashboard_data.json','w',encoding='utf-8'),indent=1)
@@ -1693,11 +2118,12 @@ HTML = r'''<!DOCTYPE html>
 <title>Albian Mine - Haulage Dashboard</title>
 <style>
 :root{--bg:#eef0f4;--card:#fff;--ink:#2b2f36;--muted:#7c828c;--line:#e3e6ec;
- --green:#4caf50;--red:#e23b32;--blue:#3f51b5;--purpleband:#3a3f9e;--head:#5c6470;}
+ --green:#4caf50;--red:#e23b32;--blue:#3f51b5;--purpleband:#3a3f9e;--head:#5c6470;
+ --fs-body:13px;--chart-h:240px;--chart-h-tall:280px;}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.4 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
-.wrap{width:100%;margin:0 auto;padding:14px 20px}
-.topbar{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+body{margin:0;background:var(--bg);color:var(--ink);font:var(--fs-body)/1.4 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+.wrap{width:100%;margin:0 auto;padding:8px 20px 14px}
+.topbar{display:flex;flex-direction:column;gap:8px;margin-bottom:6px}
 .title-wrap{text-align:center}
 .title{font-size:18px;font-weight:700}
 .sub{color:var(--muted);font-size:12px}
@@ -1707,6 +2133,13 @@ body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.4 -apple-system,
 .shiftnav select{height:32px;border:1px solid #cfd4dd;border-radius:8px;padding:0 8px;font-size:13px;font-weight:600;color:#3a3f46;background:#fff;cursor:pointer}
 .shiftnav button{width:30px;height:32px;border:1px solid #cfd4dd;background:#fff;border-radius:8px;font-size:16px;line-height:1;color:#566;cursor:pointer}
 .shiftnav button:disabled{opacity:.4;cursor:default}
+.sidenav-controls{display:flex;flex-direction:column;gap:8px;padding:0 6px 12px;margin-bottom:4px;border-bottom:1px solid #e4e8ef}
+.sidenav-controls .shiftnav{display:flex;width:100%}
+.sidenav-controls .shiftnav select{flex:1;min-width:0}
+.sidenav-controls .toggle{width:100%}
+.sidenav-controls .toggle button{flex:1;padding:7px 8px;font-size:13px}
+.ovsection{position:relative}
+.updated{position:absolute;top:12px;right:14px;padding:2px 10px;border-radius:10px;background:#eef2f7;border:1px solid #d7dee8;color:#5a6472;font-size:11px;font-weight:600;white-space:nowrap}
 .owbtn{margin:8px 0;border:1px solid #cfd4dd;background:#fff;border-radius:8px;padding:7px 14px;font-weight:600;color:var(--blue);cursor:pointer;font-size:12.5px}
 .owbtn:hover{background:#f4f6fa}
 .owbtn.on{background:#e8eef8;border-color:#3f51b5;color:#243b8a}
@@ -1842,10 +2275,7 @@ table.wf td.lead .ta{color:#2b2f36;font-weight:600}
 .charts{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .chartcard{background:var(--card);border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.08);padding:10px 12px;min-width:0}
 .chartcard h3{margin:0 0 8px;font-size:13px;color:#3a3f46}
-.chartwrap{position:relative;height:240px}
-.lubeTop .chartwrap{height:260px}
-.lubeReasonRow td:first-child{font-weight:700;color:#304d76}
-.lubeHint{font-size:10.5px;color:var(--muted);margin:-4px 0 8px}
+.chartwrap{position:relative;height:var(--chart-h)}
 .hourrow{display:flex;gap:10px;align-items:stretch}
 .hourdetail.hidden{display:none}
 .hourdetail{flex:0 0 210px;height:240px;overflow:auto;border-left:1px solid var(--line);padding-left:9px;font-size:10px;font-variant-numeric:tabular-nums}
@@ -1942,8 +2372,13 @@ table.wf td.lead .ta{color:#2b2f36;font-weight:600}
 .effrow .ev{text-align:right;font-weight:700}
 .effrow .el{text-align:right;color:#a33}
 /* ---- loss analysis panels (Pareto · top-3 band · heatmap · chips) ---- */
-.exec{background:linear-gradient(90deg,#eef3fb,#f4f7fc);border:1px solid #d6e0ef;border-left:4px solid var(--blue);border-radius:8px;padding:11px 15px;margin-bottom:14px;font-size:13.5px;color:#2b3340;line-height:1.5}
-.exec .exlead{font-weight:700;color:var(--blue);margin-right:4px}
+.exec{background:linear-gradient(90deg,#eef3fb,#f4f7fc);border:1px solid #d6e0ef;border-left:4px solid var(--blue);border-radius:8px;padding:9px 15px;margin-bottom:14px;font-size:13.5px;color:#2b3340;display:flex;align-items:center;gap:10px;white-space:nowrap;overflow:hidden}
+.exec .exlead{font-weight:700;color:var(--blue);flex:0 0 auto;white-space:nowrap}
+.exmq{flex:1 1 auto;min-width:0;overflow:hidden;position:relative;-webkit-mask-image:linear-gradient(90deg,transparent 0,#000 24px,#000 calc(100% - 24px),transparent 100%);mask-image:linear-gradient(90deg,transparent 0,#000 24px,#000 calc(100% - 24px),transparent 100%)}
+.exmq-in{display:inline-flex;align-items:center;white-space:nowrap;will-change:transform;animation:exroll 34s linear infinite}
+.exmq:hover .exmq-in{animation-play-state:paused}
+.exmq-seg{padding-right:60px}
+@keyframes exroll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
 .exec .exscore{cursor:pointer;border-bottom:1px dashed currentColor}
 .exec .exscore:hover{filter:brightness(.85)}
 .top3{background:#fff4f2;border:1px solid #f3d5cf;border-radius:7px;padding:8px 12px;margin:4px 0 14px;font-size:12px;color:#6f2c24;line-height:1.55}
@@ -1990,12 +2425,26 @@ table.wf td.lead .ta{color:#2b2f36;font-weight:600}
 .sidenav button.sub::before{content:"";position:absolute;left:-10px;top:50%;width:7px;height:1px;background:#c3c8d2}
 .sidenav button.sub.on{color:#fff}
 .content{flex:1;min-width:0}
-.pagenav{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+/* ── Collapsible sidebar ── */
+#sbEdge{position:fixed;top:0;left:0;width:18px;height:100vh;z-index:55;display:none}
+#sbShow,#sbArrow{position:fixed;top:50%;transform:translateY(-50%);z-index:56;display:none;align-items:center;justify-content:center;width:22px;height:64px;border:1px solid #cfd4dd;border-left:0;border-radius:0 10px 10px 0;background:#fff;color:#566;font-size:16px;line-height:1;cursor:pointer;box-shadow:2px 0 7px rgba(0,0,0,.12);padding:0}
+#sbShow{left:0}
+#sbShow:hover,#sbArrow:hover{background:var(--blue);color:#fff;border-color:var(--blue)}
+body.sb-auto #sbEdge{display:block}
+body.sb-auto #sbShow{display:flex}
+body:not(.sb-auto) #sbArrow{display:flex}
+body.sb-auto.sb-show #sbShow{display:none}
+body.sb-auto .layout{gap:0}
+body.sb-auto .sidenav{position:fixed;left:0;top:0;height:100vh;width:clamp(240px,22vw,320px);margin:0;padding:16px 14px 16px 12px;background:var(--bg);box-shadow:2px 0 14px rgba(0,0,0,.16);overflow-y:auto;transform:translateX(-100%);transition:transform .22s ease;z-index:60}
+body.sb-auto.sb-show .sidenav{transform:translateX(0)}
+.pagenav{display:none;align-items:center;gap:10px;margin-bottom:10px}
+body.sb-auto .pagenav{display:flex}
 .pagenav button{border:1px solid #cfd4dd;background:#fff;color:#566;border-radius:8px;padding:5px 12px;font-weight:600;font-size:12.5px;cursor:pointer;white-space:nowrap}
 .pagenav button:hover:not(:disabled){background:#f2f5fa;border-color:var(--blue);color:var(--blue)}
 .pagenav button:disabled{opacity:.4;cursor:default}
 .pagenav .pglbl{font-size:12px;color:var(--muted);font-weight:600}
-.prtbtn{margin-left:0;border:1px solid #cfd4dd;background:#fff;color:#566;border-radius:8px;padding:7px 13px;font-weight:600;font-size:13px;cursor:pointer;white-space:nowrap}
+.prtbtn{position:fixed;top:9px;right:16px;z-index:65;border:1px solid #cfd4dd;background:#fff;color:#566;border-radius:8px;padding:4px 9px;font-size:16px;line-height:1;cursor:pointer;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.prtbtn:hover{background:var(--blue);color:#fff;border-color:var(--blue)}
 .prtbtn:hover{background:#f2f5fa;border-color:var(--blue);color:var(--blue)}
 @media(max-width:820px){.charts{grid-template-columns:1fr}.avgrid{grid-template-columns:1fr}.layout{flex-direction:column}.sidenav{flex:auto;flex-direction:row;flex-wrap:wrap;position:static}}
 @media print{
@@ -2003,7 +2452,7 @@ table.wf td.lead .ta{color:#2b2f36;font-weight:600}
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   body,.wrap{background:#fff}
   .wrap{padding:0}
-  .sidenav,#shiftnav,#toggle,.prtbtn{display:none!important}
+  .sidenav,#shiftnav,#toggle,.prtbtn,#sbShow,#sbArrow,#sbEdge,.pagenav{display:none!important}
   .layout{display:block}
   .content{min-width:0}
   .topbar{margin-bottom:8px}
@@ -2015,25 +2464,21 @@ table.wf td.lead .ta{color:#2b2f36;font-weight:600}
   h2{break-after:avoid}
 }
 </style></head><body><div class="wrap">
+<button id="sbShow" onclick="toggleSidebar()" title="Show sidebar">&#8250;</button>
+<button id="sbArrow" onclick="toggleSidebar()" title="Hide sidebar">&#8249;</button>
+<div id="sbEdge"></div>
+<button class="prtbtn" onclick="window.print()" title="Print / Save the current tab as PDF">&#9113;</button>
 <div class="layout">
   <nav class="sidenav" id="sidenav">
     <div class="sidenav-logo">
       <img src="istarlogov2.png" alt="CNRL iSTAR logo">
     </div>
+    <div class="sidenav-controls">
+      <div class="shiftnav" id="shiftnav"></div>
+      <div class="toggle" id="toggle"></div>
+    </div>
   </nav>
   <main class="content">
-    <div class="topbar">
-      <div class="title-wrap">
-        <div class="title">Albian Mine — Haulage Dashboard</div>
-        <div class="sub" id="sub"></div>
-      </div>
-      <div class="topcontrols">
-        <div class="shiftnav" id="shiftnav"></div>
-        <div class="toggle" id="toggle"></div>
-        <button class="prtbtn" onclick="window.print()" title="Print / Save the current tab as PDF">&#9113; Print</button>
-      </div>
-    </div>
-
     <div class="pagenav">
       <button id="pgPrev" onclick="pageStep(-1)" title="Previous page">&#8249; Back</button>
       <span class="pglbl" id="pgLabel"></span>
@@ -2043,10 +2488,11 @@ table.wf td.lead .ta{color:#2b2f36;font-weight:600}
     <div id="eqTlPop" onmouseleave="eqTlHide()"></div>
     <section class="page" id="pg-overview" hidden>
       <div class="exec" id="ovExec"></div>
-      <div class="section">
+      <div class="section ovsection">
+        <div class="updated" id="ovUpdated"></div>
         <h2>Shift Overview <span class="sub" id="ovsub"></span></h2>
         <div class="charts">
-          <div class="chartcard"><h3>Shift Progress — Cumulative Tonnes vs Target</h3><div class="chartwrap"><canvas id="chCum"></canvas></div><div class="foot" id="cumNote" style="display:none;color:#b0762f">Actual unavailable — load timestamps missing in the export; showing target only.</div><div class="foot" id="cumReqNote" style="display:none;line-height:1.5"></div></div>
+          <div class="chartcard"><h3>Shift Progress — Cumulative Tonnes vs Target</h3><div class="chartwrap"><canvas id="chCum"></canvas></div><div class="foot" id="cumNote" style="display:none;color:#b0762f">Actual unavailable — load timestamps missing in the export; showing target only.</div></div>
           <div class="chartcard"><h3 class="prodhd">Hourly tonnes vs target <span class="sub">— click an hour for its detail</span><button class="tgl" id="hourDetBtn" onclick="toggleHourDet()">Details</button></h3><div class="hourrow"><div class="chartwrap" style="flex:1;min-width:0"><canvas id="chHour"></canvas></div><div id="hourDetail" class="hourdetail"></div></div><div class="foot" id="hourNote" style="display:none;color:#b0762f">Actual unavailable — load timestamps missing in the export; showing target only.</div></div>
         </div>
       </div>
@@ -2054,28 +2500,42 @@ table.wf td.lead .ta{color:#2b2f36;font-weight:600}
         <h2 class="prodhd"><span>Equipment Hours and Performance</span> <span class="sub" id="ovkpisub"></span><button class="avexp" id="avExpandBtn" onclick="toggleAvExpand()">Expand all</button></h2>
         <div id="ovKpi" class="avgrid"></div>
       </div>
+    </section>
+
+    <section class="page" id="pg-recommendations" hidden>
       <div class="section">
-        <h2>Shovel Placement <span class="sub" id="hcsub2"></span></h2>
+        <h2>Last 14 Shifts <span class="sub" id="recsub"></span></h2>
+        <div id="recBody"></div>
+        <div class="foot">Only measures below baseline are listed. Priority is driven by the size of the miss, and each row links to the source tab for drill-down.</div>
+      </div>
+    </section>
+
+    <section class="page" id="pg-playbook" hidden>
+      <div class="section">
+        <h2>Playbook <span class="sub" id="playsub"></span></h2>
+        <div id="playbookBody"></div>
+      </div>
+    </section>
+
+    <section class="page" id="pg-matplace" hidden>
+      <div class="section">
+        <h2>Material Placement <span class="sub" id="hcsub2"></span></h2>
+        <div class="foot" style="margin-bottom:8px">Three-column material flow: <b>Previous Dump</b> → <b>Shovel</b> (loading point) → <b>Dump</b> (destination). Ribbon <b>width ∝ tonnage</b>; ribbon <b>length ∝ haul distance</b> — left ribbons stretch with the <b>empty-haul</b> distance (prev dump → shovel), right ribbons with the <b>full-haul</b> distance (shovel → dump). Hover a ribbon for details.</div>
         <div id="hc2"></div>
         <div class="badges" id="hcleg2"></div>
       </div>
     </section>
 
     <section class="page" id="pg-balance">
-      <div id="balanceRow"></div>
       <div class="section">
         <h2>Truck Balance — Over the Shift <span class="sub" id="btlsub"></span></h2>
         <div style="margin:-2px 0 6px;font-size:12px;color:var(--muted)">Per-hour equipment #:
-          <button class="owbtn on opModeBtn" onclick="toggleOpMode()">Showing: Deployed</button></div>
+          <button class="owbtn on opModeBtn" onclick="toggleOpMode()">Showing: by GOH</button></div>
         <div id="balanceTL"></div>
-        <div class="foot">Trucks Required (LP) vs Actual over the shift (15-min readings), with periods shaded <span style="color:#e23b32">red = under-trucked</span> / <span style="color:#3f51b5">blue = over-trucked</span>, the actual tonnage rate (green, right axis, smoothed) vs target, and est. tonnes lost while under-trucked.</div>
       </div>
       <div class="section">
         <h2>Hang/Queue Time - Over the Shift <span class="sub" id="whsub"></span></h2>
-        <div style="margin:-2px 0 6px;font-size:12px;color:var(--muted)">Per-hour equipment #:
-          <button class="owbtn on opModeBtn" onclick="toggleOpMode()">Showing: Deployed</button></div>
         <div id="waitTL"></div>
-        <div class="foot">The wait-time balance on a time axis: at each 15-min (by loading time), <span style="color:#e23b32">shovel hang above budget fills up in red = shovels starved → under-trucked</span>; <span style="color:#3f51b5">truck queue above budget fills down in blue = trucks queuing → over-trucked</span>. Flat at zero = balanced (both within budget). Shares the shift time axis with the balance graph above — compare the two for correlation.</div>
       </div>
     </section>
 
@@ -2138,7 +2598,6 @@ table.wf td.lead .ta{color:#2b2f36;font-weight:600}
         <button class="owbtn" id="stBtnS2" onclick="toggleShovBox('spot')">Spot Time &#9662;</button>
         <button class="owbtn" id="ltBtnS2" onclick="toggleShovBox('load')">Load Time &#9662;</button>
         <button class="owbtn" id="htBtnS2" onclick="toggleShovBox('hang')">Hang Time &#9662;</button>
-        <div class="foot"><b>Sched. Potential → PA · UA · OE</b> (BE 495B + HIT 800 availability vs budget CSV; OE budget = NOH ÷ GOH) <b>→ Potential → Spot · Load · Hang → Actual</b>. Cycle rows use a budget cycle built from the <b>361 t payload target</b>: per fleet·pit·month·material the <b>Hang target is a constant</b> = (361 × 3600 ÷ TPNOH) − Spot − Load, with Spot/Load from Fixed_Times. Rate = 361 ÷ budget-cycle (= TPNOH ÷ 3600) and Payload = actual − 361, so the bridge closes exactly (no residual). Red PA/UA/OE bars split by reason. Shovel TPNOH is high (~3,400–4,500 t/h) so availability rows dominate.</div>
         <div class="chartcard widecard" id="secPayS2" hidden style="margin-top:10px"><h3>Payload Compliance per Shovel <span class="sub" style="font-weight:400;color:var(--muted)">(box: Q1–Q3 · median line · ◆ mean · dashed 361 t target)</span></h3><div id="chPayS2"></div></div>
         <div class="chartcard widecard" id="secSpotS2" hidden style="margin-top:10px"><h3>Spot Time per Shovel <span class="sub" style="font-weight:400;color:var(--muted)">(actual minutes vs dashed budget tick)</span></h3><div id="chSpotS2"></div></div>
         <div class="chartcard widecard" id="secLoadS2" hidden style="margin-top:10px"><h3>Load Time per Shovel <span class="sub" style="font-weight:400;color:var(--muted)">(actual minutes vs dashed budget tick)</span></h3><div id="chLoadS2"></div></div>
@@ -2216,23 +2675,21 @@ table.wf td.lead .ta{color:#2b2f36;font-weight:600}
     </section>
 
     <section class="page" id="pg-lube" hidden>
-      <div class="charts lubeTop">
-        <div class="chartcard"><h3>Hourly Fuel Delay — This Shift <span class="sub" id="lhsub"></span></h3><div class="chartwrap"><canvas id="chLubeTrend"></canvas></div></div>
+      <div class="charts">
         <div class="chartcard"><h3>Fuel Level at Refuel <span class="sub" id="lusub"></span></h3><div class="chartwrap"><canvas id="chLubeFuel"></canvas></div></div>
+        <div class="chartcard"><h3>Hourly Fuel Delay — This Shift <span class="sub" id="lhsub"></span></h3><div class="chartwrap" style="height:var(--chart-h-tall)"><canvas id="chLubeTrend"></canvas></div></div>
       </div>
       <div class="charts">
-        <div class="chartcard">
-          <h3>Actual vs Expected by Reason</h3>
-          <div class="lubeHint">Click a reason to populate the truck overrun list.</div>
-          <div id="lubeReasons"></div>
-          <div style="margin-top:10px">
-            <h3 id="lubeLeadTitle">Overrun Leaderboard — This Shift</h3>
-            <div id="lubeLead"></div>
-          </div>
-        </div>
-        <div class="chartcard">
-          <h3>Faulty Fuel-Level Sensors <span class="sub" id="lfssub"></span></h3>
-          <div id="lubeFaulty"></div>
+        <div class="chartcard widecard"><h3>Actual vs Expected by Reason</h3><div id="lubeReasons"></div></div>
+      </div>
+      <div class="charts">
+        <div class="chartcard"><h3>Overrun Leaderboard — This Shift</h3><div id="lubeLead"></div></div>
+        <div class="chartcard" style="display:flex;flex-direction:column;justify-content:space-between;gap:16px">
+          <div><h3>By Truck Class</h3><div id="lubeClass"></div></div>
+          <div><h3>Faulty Fuel-Level Sensors <span class="sub" id="lfssub"></span></h3>
+          <div id="lubeFaulty"></div></div>
+          <div><h3>Assignment Automation</h3>
+          <div id="lubeAssignAuto"></div></div>
         </div>
       </div>
       <div class="foot" id="lubeNote"></div>
@@ -2334,7 +2791,7 @@ function renderToggle(){
 }
 // ---- state persistence + deep-linking (shift · view · tab · productivity toggles) ----
 function saveState(){
-  try{localStorage.setItem('albianDash',JSON.stringify({shift,view,tab,tp:PROD.tp,sp:PROD.sp}));}catch(e){}
+  try{localStorage.setItem('albianDash',JSON.stringify({shift,view,tab,tp:PROD.tp,sp:PROD.sp,sbAuto}));}catch(e){}
   try{history.replaceState(null,'','#tab='+encodeURIComponent(tab)+'&shift='+encodeURIComponent(shift)+'&view='+encodeURIComponent(view));}catch(e){}
 }
 function loadState(){
@@ -2347,6 +2804,7 @@ function loadState(){
   if(st.tab&&TABS.some(t=>t[0]===st.tab))tab=st.tab;
   if(st.tp){PROD.tp.tgt=st.tp.tgt!==false;PROD.tp.dlt=st.tp.dlt!==false;}
   if(st.sp){PROD.sp.tgt=st.sp.tgt!==false;PROD.sp.dlt=st.sp.dlt!==false;}
+  if(typeof st.sbAuto==='boolean')sbAuto=st.sbAuto;
 }
 function scoreColor(s){ return s<90?'#e23b32':(s<100?'#eab308':'#4caf50'); }   // <90 red · 90-100 yellow · >=100 green
 function gaugeCard(title,score,pot,act,potLbl,actLbl){
@@ -2463,7 +2921,7 @@ function opStrip(X,L,plotBottom,od){
   return g;
 }
 function toggleOpMode(){ opMode=(opMode==='dep'?'prod':'dep'); syncOpBtns(); if(typeof renderCards==='function')renderCards(); }
-function syncOpBtns(){document.querySelectorAll('.opModeBtn').forEach(b=>{b.textContent=(opMode==='dep'?'Showing: Deployed':'Showing: Productive');});}
+function syncOpBtns(){document.querySelectorAll('.opModeBtn').forEach(b=>{b.textContent=(opMode==='dep'?'Showing: by GOH':'Showing: by NOH');});}
 function drawFleetTimeline(fm,tbd,showRate){
   const s=tbd&&tbd.series||[];
   if(s.length<2) return '<div class="foot">Not enough truck-balance readings for a timeline (needs ≥ 2).</div>';
@@ -2474,9 +2932,10 @@ function drawFleetTimeline(fm,tbd,showRate){
   const rate=(fm&&fm.rate)||[], maxR=Math.max(fm?fm.targetTph:1,...rate.map(r=>r.tph),1)*1.15;
   const X=m=>L+m/TOT*pw, Ytrk=v=>T+ph-v/maxTrk*ph, Yr=v=>T+ph-v/maxR*ph;
   let g='';
-  for(let i=0;i<=4;i++){const v=maxTrk*i/4,y=Ytrk(v);g+=`<line x1="${L}" y1="${y}" x2="${L+pw}" y2="${y}" stroke="#eef0f4"/><text x="${L-5}" y="${y+3}" text-anchor="end" font-size="9" fill="#3f51b5">${Math.round(v)}</text>`;}
-  if(showRate) for(let i=1;i<=4;i++){const v=maxR*i/4,y=Yr(v);g+=`<text x="${L+pw+5}" y="${y+3}" font-size="9" fill="#2f8f4e">${(v/1000).toFixed(0)}k</text>`;}
-  for(let hh=0;hh<=12;hh+=2){const x=X(hh*60);g+=`<line x1="${x}" y1="${T}" x2="${x}" y2="${T+ph}" stroke="#f2f4f7"/><text x="${x}" y="${T+ph+13}" text-anchor="middle" font-size="9" fill="var(--muted)">${(base+hh)%24}:00</text>`;}
+  const trkLblStep=maxTrk<25?5:10;   // minor gridline every 5 trucks; label every 5 or 10
+  for(let v=0;v<=maxTrk;v+=5){const y=Ytrk(v),lbl=(v%trkLblStep===0);g+=`<line x1="${L}" y1="${y}" x2="${L+pw}" y2="${y}" stroke="${lbl?'#e3e6eb':'#eef0f4'}" stroke-width="${lbl?0.9:0.5}"/>${lbl?`<text x="${L-6}" y="${y+4}" text-anchor="end" font-size="12" fill="#3f51b5">${v}</text>`:''}`;}
+  if(showRate) for(let i=1;i<=4;i++){const v=maxR*i/4,y=Yr(v);g+=`<text x="${L+pw+5}" y="${y+4}" font-size="12" fill="#2f8f4e">${(v/1000).toFixed(0)}k</text>`;}
+  for(let hh=0;hh<=12;hh++){const x=X(hh*60);g+=`<line x1="${x}" y1="${T}" x2="${x}" y2="${T+ph}" stroke="#e8ebf0" stroke-width="0.9"/><text x="${x}" y="${T+ph+15}" text-anchor="middle" font-size="12" fill="var(--muted)">${(base+hh)%24}:00</text>`;}
   // last-hour window: very light shading (the same window the balance card scores)
   const lastM=Math.max(...s.map(p=>p.m)), lx0=X(Math.max(0,lastM-60)), lx1=X(lastM);
   g+=`<rect x="${lx0}" y="${T}" width="${Math.max(0,lx1-lx0)}" height="${ph}" fill="#586172" fill-opacity="0.06"/>`;
@@ -2503,22 +2962,20 @@ function drawFleetTimeline(fm,tbd,showRate){
   const pathOf=k=>s.map((p,i)=>(i?'L':'M')+X(p.m).toFixed(1)+' '+Ytrk(p[k]).toFixed(1)).join(' ');
   g+=`<path d="${pathOf('req')}" fill="none" stroke="#e0952a" stroke-width="1.8" stroke-dasharray="5 3"/>`;
   g+=`<path d="${pathOf('act')}" fill="none" stroke="#3f51b5" stroke-width="1.9"/>`;
-  g+=`<text x="12" y="${T+ph/2}" transform="rotate(-90 12 ${T+ph/2})" text-anchor="middle" font-size="9" fill="#3f51b5">trucks</text>`;
-  if(showRate) g+=`<text x="${W-8}" y="${T+ph/2}" transform="rotate(90 ${W-8} ${T+ph/2})" text-anchor="middle" font-size="9" fill="#2f8f4e">t/h</text>`;
-  // last-hour status pill (Balanced / Under- / Over-trucked)
+  g+=`<text x="12" y="${T+ph/2}" transform="rotate(-90 12 ${T+ph/2})" text-anchor="middle" font-size="11" fill="#3f51b5">trucks</text>`;
+  if(showRate) g+=`<text x="${W-8}" y="${T+ph/2}" transform="rotate(90 ${W-8} ${T+ph/2})" text-anchor="middle" font-size="11" fill="#2f8f4e">t/h</text>`;
+  // last-hour status pill (Balanced / Under- / Over-trucked) — always shows the % magnitude
   const lbl=tbd.label||'', lcol=lbl==='Balanced'?'#2f8f4e':'#e0952a';
-  const full='last hr · '+(lbl||'—')+(lbl&&lbl!=='Balanced'?' '+Math.abs(tbd.pct||0).toFixed(0)+'%':'');
-  const bwid=full.length*5.0+22, bcx=(lx0+lx1)/2, bx=Math.max(L+2,Math.min(L+pw-bwid-2,bcx-bwid/2)), byy=T+3;
-  g+=`<rect x="${bx}" y="${byy}" width="${bwid}" height="15" rx="7.5" fill="#fff" fill-opacity="0.92" stroke="${lcol}" stroke-width="1"/>`;
-  g+=`<circle cx="${bx+9}" cy="${byy+7.5}" r="2.7" fill="${lcol}"/>`;
-  g+=`<text x="${bx+15}" y="${byy+11}" font-size="9" font-weight="700" fill="${lcol}">${full}</text>`;
+  const full='last hr · '+(lbl||'—')+(lbl?' '+Math.abs(tbd.pct||0).toFixed(0)+'%':'');
+  const bh2=22, bwid=full.length*7.2+30, bcx=(lx0+lx1)/2, bx=Math.max(L+2,Math.min(L+pw-bwid-2,bcx-bwid/2)), byy=T+3;
+  g+=`<rect x="${bx}" y="${byy}" width="${bwid}" height="${bh2}" rx="11" fill="#fff" fill-opacity="0.94" stroke="${lcol}" stroke-width="1.4"/>`;
+  g+=`<circle cx="${bx+13}" cy="${byy+bh2/2}" r="3.8" fill="${lcol}"/>`;
+  g+=`<text x="${bx+22}" y="${byy+bh2/2+4.6}" font-size="13.5" font-weight="700" fill="${lcol}">${full}</text>`;
   g+=opStrip(X,L,T+ph,(typeof V==='function'&&V())?V().opDeployed:null);
   return `<svg viewBox="0 0 ${W} ${H}" width="100%">${g}</svg><div class="badges" style="margin-top:6px">`
     +`<span class="badge"><b style="color:#e0952a">– –</b> required</span><span class="badge"><b style="color:#3f51b5">—</b> actual</span>`
     +`<span class="badge"><b style="color:#e23b32">▨</b> under-trucked</span><span class="badge"><b style="color:#3f51b5">▨</b> over-trucked</span>`
-    +(showRate?`<span class="badge"><b style="color:#2f8f4e">—</b> t/h</span>`:``)
-    +`<span class="badge"><b style="color:#243b8a">Truck#</b>/<b style="color:#0f6e56">Shovel#</b> per hour · showing <b>${opMode==='dep'?'deployed (Ready+Delay)':'productive (Ready)'}</b></span>`
-    +`<span class="badge">under <b>${fm?fm.underMin:0}</b> min · over <b>${fm?fm.overMin:0}</b> min · est. <b>${fm?fmt(fm.lostTonnes):0} t</b> lost to under-trucking</span></div>`;
+    +(showRate?`<span class="badge"><b style="color:#2f8f4e">—</b> t/h</span>`:``)+`</div>`;
 }
 function drawWaitBalanceTL(fm,tbd){
   // Hang/Queue time over the shift (the Fleet-Match diverging bar, on a time axis). Same x-axis as the balance graph.
@@ -2532,7 +2989,12 @@ function drawWaitBalanceTL(fm,tbd){
   const W=1000,H=236,L=52,Rp=54,T=16,B=40,pw=W-L-Rp,ph=H-T-B,TOT=720,mid=T+ph/2;
   const X=m=>L+m/TOT*pw, Yup=v=>mid-v/maxE*(ph/2), Ydn=v=>mid+v/maxE*(ph/2);
   let g='';
-  for(let hh=0;hh<=12;hh+=2){const x=X(hh*60);g+=`<line x1="${x}" y1="${T}" x2="${x}" y2="${T+ph}" stroke="#f2f4f7"/><text x="${x}" y="${T+ph+13}" text-anchor="middle" font-size="9" fill="var(--muted)">${(base+hh)%24}:00</text>`;}
+  for(let hh=0;hh<=12;hh++){const x=X(hh*60);g+=`<line x1="${x}" y1="${T}" x2="${x}" y2="${T+ph}" stroke="#e8ebf0" stroke-width="0.9"/><text x="${x}" y="${T+ph+15}" text-anchor="middle" font-size="12" fill="var(--muted)">${(base+hh)%24}:00</text>`;}
+  // minor gridlines + labels every 1 minute (up = hang, down = queue); unit shown in the axis title
+  for(let v=60;v<=maxE;v+=60){const yu=Yup(v),yd=Ydn(v),m=v/60;
+    g+=`<line x1="${L}" y1="${yu}" x2="${L+pw}" y2="${yu}" stroke="#f3ecec" stroke-width="0.5"/><text x="${L-6}" y="${yu+4}" text-anchor="end" font-size="12" fill="#e23b32">${m}</text>`;
+    g+=`<line x1="${L}" y1="${yd}" x2="${L+pw}" y2="${yd}" stroke="#eaecf3" stroke-width="0.5"/><text x="${L-6}" y="${yd+4}" text-anchor="end" font-size="12" fill="#3f51b5">${m}</text>`;}
+  g+=`<text x="13" y="${mid}" transform="rotate(-90 13 ${mid})" text-anchor="middle" font-size="11" fill="var(--muted)">min/load</text>`;
   // hang excess (red, above zero)
   let up='M'+X(s[0].m).toFixed(1)+' '+mid;
   s.forEach((p,i)=>{up+=' L'+X(p.m).toFixed(1)+' '+Yup(he[i]).toFixed(1);});
@@ -2544,21 +3006,17 @@ function drawWaitBalanceTL(fm,tbd){
   dn+=' L'+X(s[s.length-1].m).toFixed(1)+' '+mid+' Z';
   g+=`<path d="${dn}" fill="#3f51b5" fill-opacity="0.20" stroke="#3f51b5" stroke-width="1.4"/>`;
   g+=`<line x1="${L}" y1="${mid}" x2="${L+pw}" y2="${mid}" stroke="#98a0ac" stroke-width="1.2"/>`;
-  // y labels
-  g+=`<text x="${L-6}" y="${T+9}" text-anchor="end" font-size="9" fill="#e23b32">+${fmtTime(maxE)}</text>`;
-  g+=`<text x="${L-6}" y="${mid+3}" text-anchor="end" font-size="9" fill="var(--muted)">0</text>`;
-  g+=`<text x="${L-6}" y="${T+ph}" text-anchor="end" font-size="9" fill="#3f51b5">+${fmtTime(maxE)}</text>`;
-  g+=`<text x="${L+5}" y="${T+11}" font-size="9.5" fill="#e23b32">▲ shovels starved (hang &gt; budget) — under-trucked</text>`;
-  g+=`<text x="${L+5}" y="${mid+16}" font-size="9.5" fill="#3f51b5">▼ trucks queuing (queue &gt; budget) — over-trucked</text>`;
+  // zero baseline label (per-minute labels drawn with the gridlines above)
+  g+=`<text x="${L-6}" y="${mid+4}" text-anchor="end" font-size="12" fill="var(--muted)">0</text>`;
+  g+=`<text x="${L+5}" y="${T+11}" font-size="11" fill="#e23b32">▲ shovels starved (hang &gt; budget) — under-trucked</text>`;
+  g+=`<text x="${L+5}" y="${mid+16}" font-size="11" fill="#3f51b5">▼ trucks queuing (queue &gt; budget) — over-trucked</text>`;
   // dots
   s.forEach((p,i)=>{const hhm=(base+Math.floor(p.m/60))%24, mm=String(p.m%60).padStart(2,'0');
     if(he[i]>0)g+=`<circle cx="${X(p.m).toFixed(1)}" cy="${Yup(he[i]).toFixed(1)}" r="1.5" fill="#e23b32"><title>${hhm}:${mm} — hang ${fmtTime(p.h)} vs bud ${fmtTime(hb)} (+${fmtTime(he[i])})</title></circle>`;
     if(qe[i]>0)g+=`<circle cx="${X(p.m).toFixed(1)}" cy="${Ydn(qe[i]).toFixed(1)}" r="1.5" fill="#3f51b5"><title>${hhm}:${mm} — queue ${fmtTime(p.q)} vs bud ${fmtTime(qb)} (+${fmtTime(qe[i])})</title></circle>`;});
-  g+=opStrip(X,L,T+ph,(typeof V==='function'&&V())?V().opDeployed:null);
   return `<svg viewBox="0 0 ${W} ${H}" width="100%">${g}</svg><div class="badges" style="margin-top:6px">`
     +`<span class="badge"><b style="color:#e23b32">▨</b> Shovel hang over target</span>`
     +`<span class="badge"><b style="color:#3f51b5">▨</b> Truck queue over target</span>`
-    +`<span class="badge"><b style="color:#243b8a">Truck#</b>/<b style="color:#0f6e56">Shovel#</b> per hour · showing <b>${opMode==='dep'?'deployed (Ready+Delay)':'productive (Ready)'}</b></span>`
     +`<span class="badge">budget: queue ${fmtTime(qb)} · hang ${fmtTime(hb)} per load</span></div>`;
 }
 function drawBalanceTL(tbd){
@@ -2581,27 +3039,19 @@ function drawBalanceTL(tbd){
   g+=`<text x="12" y="${T+ph/2}" transform="rotate(-90 12 ${T+ph/2})" text-anchor="middle" font-size="9" fill="var(--muted)">trucks</text>`;
   return `<svg viewBox="0 0 ${W} ${H}" width="100%">${g}</svg><div class="badges" style="margin-top:6px"><span class="badge"><b style="color:#e0952a">– –</b> required</span><span class="badge"><b style="color:#3f51b5">—</b> actual (LP)</span><span class="badge">shaded = imbalance</span></div>`;
 }
-let lubeReasonFilter='';
 function renderLube(){
   const lu=V().lube;
   document.getElementById('lubeNote').textContent=`${lu.n} events (this shift/view) · ${lu.shortCount} short <20s FUEL&LUBE/BREAK ignored · ${lu.faulty} faulty fuel reads (>100%) · ${lu.zero} zero/missing`;
   const m1=s=>(s/60).toFixed(1);
-  const hasFilter=lu.reasons.some(r=>r.reason===lubeReasonFilter); if(!hasFilter) lubeReasonFilter='';
-  const totN=lu.reasons.reduce((a,r)=>a+r.n,0),totA=lu.reasons.reduce((a,r)=>a+r.actual,0),totE=lu.reasons.reduce((a,r)=>a+r.exp,0);
-  const totAvg=totN?(totA/totN):0,totOver=totN?Math.round(lu.reasons.reduce((a,r)=>a+r.n*r.over/100,0)/totN*100):0;
-  const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
   let rt=`<table class="lanetab"><tr><th>Reason</th><th>Events</th><th>Actual min</th><th>Expected min</th><th>Avg min</th><th>% over</th></tr>`;
-  rt+=`<tr class="lubeReasonRow ${!lubeReasonFilter?'sel':''}" data-reason=""><td>All delays</td><td>${totN}</td><td>${totA.toFixed(1)}</td><td>${totE.toFixed(1)}</td><td>${totAvg.toFixed(1)}</td><td>${totOver}%</td></tr>`;
-  lu.reasons.forEach(r=>rt+=`<tr class="lubeReasonRow ${lubeReasonFilter===r.reason?'sel':''}" data-reason="${esc(r.reason)}"><td>${r.reason}</td><td>${r.n}</td><td>${r.actual}</td><td>${r.exp}</td><td>${m1(r.avg)}</td><td>${r.over}%</td></tr>`);
-  const rr=document.getElementById('lubeReasons'); rr.innerHTML=rt+'</table>';
-  rr.querySelectorAll('.lubeReasonRow').forEach(tr=>tr.addEventListener('click',()=>{lubeReasonFilter=tr.dataset.reason||'';renderLube();}));
-  const lTitle=document.getElementById('lubeLeadTitle');
-  if(lTitle) lTitle.textContent=lubeReasonFilter?`Overrun Leaderboard — ${lubeReasonFilter}`:'Overrun Leaderboard — This Shift';
-  const leadRows=lubeReasonFilter?lu.leaderboard.filter(r=>r.reason===lubeReasonFilter):lu.leaderboard.slice(0,12);
+  lu.reasons.forEach(r=>rt+=`<tr><td>${r.reason}</td><td>${r.n}</td><td>${r.actual}</td><td>${r.exp}</td><td>${m1(r.avg)}</td><td>${r.over}%</td></tr>`);
+  document.getElementById('lubeReasons').innerHTML=rt+'</table>';
   let lt=`<table class="lanetab"><tr><th>Time</th><th>Truck</th><th>Type</th><th>Reason</th><th>Act min</th><th>Exp min</th><th>Over min</th></tr>`;
-  if(leadRows.length) leadRows.forEach(r=>lt+=`<tr><td>${r.time}</td><td>${r.eqmt}</td><td>${r.type}</td><td>${r.reason}</td><td>${m1(r.actual)}</td><td>${m1(r.exp)}</td><td style="color:${r.over>0?'var(--red)':'var(--green)'};font-weight:700">${r.over>0?'+':''}${m1(r.over)}</td></tr>`);
-  else lt+=`<tr><td colspan="7" style="text-align:left;color:var(--muted)">No truck events for this reason.</td></tr>`;
+  lu.leaderboard.forEach(r=>lt+=`<tr><td>${r.time}</td><td>${r.eqmt}</td><td>${r.type}</td><td>${r.reason}</td><td>${m1(r.actual)}</td><td>${m1(r.exp)}</td><td style="color:${r.over>0?'var(--red)':'var(--green)'};font-weight:700">${r.over>0?'+':''}${m1(r.over)}</td></tr>`);
   document.getElementById('lubeLead').innerHTML=lt+'</table>';
+  let ct=`<table class="lanetab"><tr><th>Truck class</th><th>Events</th><th>Avg min</th><th>Total min</th></tr>`;
+  lu.byClass.forEach(r=>ct+=`<tr><td>${r.type}</td><td>${r.n}</td><td>${m1(r.avg)}</td><td>${r.total}</td></tr>`);
+  document.getElementById('lubeClass').innerHTML=ct+'</table>';
   const fs=lu.faultySensor||[];
   const fss=document.getElementById('lfssub');
   if(!fs.length){document.getElementById('lubeFaulty').innerHTML='<div class="foot">No faulty fuel-level reads (>100 %) this shift/view.</div>';if(fss)fss.textContent='';}
@@ -2615,6 +3065,21 @@ function renderLube(){
     types.forEach(t=>{const g=byT[t];
       g.forEach((r,i)=>{ft+=`<tr><td>${i===0?t+' ('+g.length+')':''}</td><td>${r.eqmt}</td><td>${r.reads}</td><td style="color:var(--red);font-weight:700">${r.value} %</td></tr>`;});});
     document.getElementById('lubeFaulty').innerHTML=ft+'</table>';
+  }
+  // ---- assignment automation (System vs Manual) ----
+  {
+    const fa=lu.fuelAssign||{};
+    const bar=(pct,color)=>`<div style="display:inline-block;width:${pct}%;height:12px;background:${color};border-radius:2px;vertical-align:middle"></div>`;
+    let ht='<table class="lanetab">';
+    ht+=`<tr><th>Metric</th><th>System</th><th>Manual</th><th>Total</th><th style="min-width:120px">System %</th></tr>`;
+    if(fa.total>0){
+      ht+=`<tr><td>Fuel Assignments</td><td>${fa.system}</td><td>${fa.manual}</td><td>${fa.total}</td>`;
+      ht+=`<td>${bar(fa.sysPct,'#1f9e8b')}${bar(fa.manPct,'#e0952a')} <b>${fa.sysPct}%</b> system</td></tr>`;
+    }else{
+      ht+=`<tr><td colspan="5" class="foot">No fuel assignment data for this shift/view.</td></tr>`;
+    }
+    ht+='</table><div class="foot" style="margin-top:4px">Fuel Assignments: System vs Dispatcher (manual deduplicated to most recent per truck).</div>';
+    document.getElementById('lubeAssignAuto').innerHTML=ht;
   }
   if(typeof Chart==='undefined')return;
   const hy=lu.hourly, toH=a=>a.map(v=>v/60);
@@ -2641,7 +3106,7 @@ function renderLube(){
     {type:'bar',label:'Wait for bay',data:waitH,backgroundColor:'#e0952a',stack:'s',order:2},
     {type:'bar',label:'Break',data:brkH,backgroundColor:'#9aa0ab',stack:'s',order:2},
     {type:'line',label:'Expected',data:expH,borderColor:'#2b2f36',borderDash:[4,3],pointRadius:0,borderWidth:1.4,fill:false,order:1}
-  ]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:14,bottom:14}},plugins:{legend:{labels:{boxWidth:11,font:{size:10}}},tooltip:{callbacks:{footer:c=>{const i=c[0].dataIndex;return 'total '+(fuelH[i]+waitH[i]+brkH[i]).toFixed(1)+'h · '+hy.occ[i]+' events'+(hy.occWait[i]?' ('+hy.occWait[i]+' wait for bay events)':'');}}}},scales:{x:{stacked:true,title:{display:true,text:'hour of shift'},ticks:{font:{size:10}}},y:{stacked:true,title:{display:true,text:'hours'},ticks:{font:{size:10}}}}},plugins:[barLabels]});
+  ]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:14,bottom:14}},plugins:{legend:{labels:{boxWidth:11,font:{size:10}}},tooltip:{callbacks:{footer:c=>{const i=c[0].dataIndex;return 'total '+(fuelH[i]+waitH[i]+brkH[i]).toFixed(1)+'h · '+hy.occ[i]+' occ'+(hy.occWait[i]?' ('+hy.occWait[i]+' wait for bay)':'');}}}},scales:{x:{stacked:true,title:{display:true,text:'hour of shift'},ticks:{font:{size:10}}},y:{stacked:true,title:{display:true,text:'hours'},ticks:{font:{size:10}}}}},plugins:[barLabels]});
   const fh=lu.fuelHist, fhTot=fh.reduce((a,b)=>a+b,0)||1;
   const fuelAvg=fhTot/fh.length;
   const fuelPct={id:'fuelPct',afterDatasetsDraw(ch){
@@ -2689,6 +3154,29 @@ function sparkCycle(hourly){   // avg truck cycle time (mm:ss) per hour for a sh
       +`<text x="${x.toFixed(1)}" y="${(y-4).toFixed(1)}" text-anchor="middle" font-size="8" fill="#3f51b5" font-weight="700">${fmtTime(p.v)}</text>`;});
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:270px">${g}</svg>`;
 }
+function sparkTP(hourly,tgt){   // avg truck TPNOH (t/h) per hour for a shovel→dump path, with grid + point labels + optional target line
+  const hrs=(V().hourlyPerf&&V().hourlyPerf.hours)||[];
+  const pts=(hourly||[]).map((v,i)=>({i,v})).filter(p=>p.v!=null);
+  if(pts.length<2) return `<div class="foot" style="font-size:10px">Not enough hourly data.</div>`;
+  const W=250,H=86,L=32,R=8,T=13,B=16,pw=W-L-R,ph=H-T-B;
+  let mx=Math.max(...pts.map(p=>p.v),tgt||0), mn=Math.min(...pts.map(p=>p.v),tgt||Infinity);
+  const pad=(mx-mn)*0.18||50; mx+=pad; mn=Math.max(0,mn-pad); const sp=(mx-mn)||1;
+  const X=i=>L+(i/11)*pw, Y=v=>T+ph-((v-mn)/sp)*ph;
+  let g='';
+  const step=Math.max(50,Math.ceil((mx-mn)/4/50)*50);   // grid at round t/h
+  for(let m=Math.ceil(mn/step)*step;m<=mx;m+=step){const y=Y(m); if(y<T-1||y>T+ph+1)continue;
+    g+=`<line x1="${L}" y1="${y.toFixed(1)}" x2="${W-R}" y2="${y.toFixed(1)}" stroke="#eceff3" stroke-width="0.7"/>`
+      +`<text x="${L-3}" y="${(y+2.5).toFixed(1)}" text-anchor="end" font-size="7.5" fill="var(--muted)">${m}</text>`;}
+  [0,3,6,9,11].forEach(i=>{const x=X(i);g+=`<line x1="${x.toFixed(1)}" y1="${T}" x2="${x.toFixed(1)}" y2="${T+ph}" stroke="#f4f6f8" stroke-width="0.6"/>`
+      +`<text x="${x.toFixed(1)}" y="${H-4}" text-anchor="middle" font-size="7.5" fill="var(--muted)">${hrs[i]?hrs[i].slice(0,2):i}</text>`;});
+  if(tgt!=null&&tgt>0){const yt=Y(tgt); if(yt>=T-1&&yt<=T+ph+1) g+=`<line x1="${L}" y1="${yt.toFixed(1)}" x2="${W-R}" y2="${yt.toFixed(1)}" stroke="#9aa0ab" stroke-width="1" stroke-dasharray="4 3"><title>target ${fmt(tgt)} t/h</title></line>`;}
+  let path=''; pts.forEach((p,k)=>{const x=X(p.i),y=Y(p.v); path+=(k===0?`M${x.toFixed(1)} ${y.toFixed(1)}`:` L${x.toFixed(1)} ${y.toFixed(1)}`);});
+  g+=`<path d="${path}" fill="none" stroke="#1f9e8b" stroke-width="1.4"/>`;
+  pts.forEach(p=>{const x=X(p.i),y=Y(p.v);
+    g+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2" fill="#1f9e8b"><title>${hrs[p.i]||('H'+(p.i+1))} — ${fmt(p.v)} t/h</title></circle>`
+      +`<text x="${x.toFixed(1)}" y="${(y-4).toFixed(1)}" text-anchor="middle" font-size="8" fill="#178173" font-weight="700">${fmt(p.v)}</text>`;});
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:270px">${g}</svg>`;
+}
 function avDrop(r,lbl){
   if(lbl==='TPNOH'){const u=r.tpUnits||[], by=r.tpBy||'type';
     const hd=(by==='trkavg')?'Avg truck TPNOH per loading shovel — actual vs budget (t/h)'
@@ -2708,8 +3196,8 @@ function avDrop(r,lbl){
       }
       s=`<div class="dr dsvhead"><span>${nm}</span><span><b>${fmt(x.tpnoh)}</b> vs ${x.btpnoh!=null?fmt(x.btpnoh):'—'}</span></div>`;
       (x.dumps||[]).forEach(d=>{const dc=d.dTon>=0?'#2f7a44':'#b3382b', tc=d.actTP>=d.tgtTP?'#2f7a44':'#b3382b';
-        s+=`<div class="drdump drx" onclick="this.nextElementSibling.classList.toggle('open');this.classList.toggle('open')"><span class="ddh" title="${d.dump} — click for hourly cycle-time trend"><i class="cx">▸</i>${d.n} - ${d.dump} (${d.km} km)</span><span class="ddm"><b style="color:${tc}">${fmt(d.actTP)}</b>/${fmt(d.tgtTP)} · <b style="color:${dc}">${d.dTon>=0?'+':''}${fmt(d.dTon)}t</b></span></div>`+
-          `<div class="dumpspark"><div class="sparkcap">Truck cycle time / hr</div>${sparkCycle(d.hourly)}</div>`;});
+        s+=`<div class="drdump drx" onclick="this.nextElementSibling.classList.toggle('open');this.classList.toggle('open')"><span class="ddh" title="${d.dump} — click for hourly TPNOH trend"><i class="cx">▸</i>${d.n} - ${d.dump} (${d.km} km)</span><span class="ddm"><b style="color:${tc}">${fmt(d.actTP)}</b>/${fmt(d.tgtTP)} · <b style="color:${dc}">${d.dTon>=0?'+':''}${fmt(d.dTon)}t</b></span></div>`+
+          `<div class="dumpspark"><div class="sparkcap">Truck TPNOH / hr (t/h) · dashed = target</div>${sparkTP(d.hourlyTP,d.tgtTP)}</div>`;});
       return s;}).join('');});
     return h;
   }
@@ -2750,7 +3238,7 @@ function buildAvCards(av){
     const title=AVLBL[r.group]||r.group;
     const noun=r.group==='Cat 797'?'trucks':'shovels';
     const hk=(r.group==='Cat 797'&&V().analytics&&V().analytics.hourly&&V().analytics.hourly.haulKmAvg!=null)?` <span style="color:var(--muted)">@${V().analytics.hourly.haulKmAvg.toFixed(1)}km</span>`:'';
-    const dep=(r.deployed!=null)?`<div class="avdeploy" title="Deployed = gross operating hours (Ready+Delay) ÷ elapsed shift-hours · @km = overall average full-haul distance">≈ <b>${r.deployed.toFixed(1)}</b> ${noun} deployed${hk}</div>`:'';
+    const dep=(r.deployed!=null)?`<div class="avdeploy" title="Effective units = gross operating hours (Ready+Delay) ÷ elapsed shift-hours · @km = overall average full-haul distance">≈ <b>${r.deployed.toFixed(1)}</b> ${noun}${hk}</div>`:'';
     const tlbtn=`<div style="text-align:center;margin:-3px 0 7px"><button class="tlbtn" onmouseenter="eqTlShow(event,'${r.group}')" onmouseleave="eqTlHide()" onclick="eqTlShow(event,'${r.group}')">Timeline</button></div>`;
     cards+=`<div class="avcard"><h4>${title}</h4>${dep}${tlbtn}${rows}</div>`;
   });
@@ -2759,15 +3247,16 @@ function buildAvCards(av){
 const AVLBL={'Cable shovel':'Cable Shovel - BE 495B','Hydraulic shovel':'Hydraulic Shovel - HIT 8000','Cat 797':'Large Truck - Cat 797'};
 function eqTimelineHTML(group){   // status timeline filtered to a fleet + its per-hour deployed count
   const a=V().analytics, od=V().opDeployed; if(!a)return '<div class="foot">No timeline for this view.</div>';
+  const arow=(V().availability||[]).find(r=>r.group===group)||{}, el=arow.elapsedH||12;   // elapsed shift-hours (matches the card headline denominator)
   let tlsvg,hrs,lbl;
   if(group==='Cat 797'){tlsvg=drawTimeline(a.truckTimeline,{rowH:6,labelFont:6,compact:true}); hrs=od?od.trucks:null; lbl='Cat 797 trucks';}
-  else{const pre=group==='Cable shovel'?'S0':'S8', tl=a.timeline, eq=(tl.equip||[]).filter(k=>k.slice(0,2)===pre), seg={};
+  else{const pre=group==='Cable shovel'?'S0':'S8', tl=a.timeline, eq=(tl.equip||[]).filter(k=>k.slice(0,2)===pre).sort((x,y)=>x.localeCompare(y,undefined,{numeric:true})), seg={};
     eq.forEach(k=>seg[k]=tl.seg[k]);
     tlsvg=eq.length?drawTimeline(Object.assign({},tl,{equip:eq,seg})):'<div class="foot">No status-timeline data.</div>';
     hrs=od?(group==='Cable shovel'?od.cable:od.hydraulic):null; lbl=(group==='Cable shovel'?'BE 495B':'HIT 800')+' shovels';}
   let hr='';
-  if(hrs&&od){hr=`<div class="eqpophr eqpophrtop"><span class="eqk">deployed / hr →</span>`+hrs.map((v,i)=>`<span title="${od.hours[i]}:00">${Math.round(v)}</span>`).join('')+`</div>`;}
-  return `<div class="eqpoptitle">${lbl} — equipment status timeline${hrs?` &nbsp;·&nbsp; avg deployed <b style="color:#243b8a">${(hrs.reduce((s,v)=>s+v,0)/12).toFixed(1)}</b>`:''}</div>${hr}${tlsvg}`;
+  if(hrs&&od){hr=`<div class="eqpophr eqpophrtop"><span class="eqk"># / hr →</span>`+hrs.map((v,i)=>`<span title="${od.hours[i]}:00">${v.toFixed(1)}</span>`).join('')+`</div>`;}
+  return `<div class="eqpoptitle">${lbl} — equipment status timeline${hrs?` &nbsp;·&nbsp; avg # <b style="color:#243b8a">${(hrs.reduce((s,v)=>s+v,0)/el).toFixed(1)}</b>`:''}</div>${hr}${tlsvg}`;
 }
 function popShow(ev,html){const pop=document.getElementById('eqTlPop'); if(!pop)return;
   pop.innerHTML=html; pop.style.display='block';
@@ -2818,7 +3307,6 @@ function renderSandbox(){
 }
 function renderCards(){
   const v=V();
-  document.getElementById('balanceRow').innerHTML=balanceCard(v.truckBalance);
   document.getElementById('btlsub').textContent='('+view+')';
   document.getElementById('balanceTL').innerHTML=drawFleetTimeline(v.fleetMatch,v.truckBalance,false);
   document.getElementById('whsub').textContent='('+view+')';
@@ -2879,7 +3367,7 @@ function fillLoadDrill(){
 function toggleDrill(id){const e=document.getElementById(id);if(e)e.classList.toggle('open');}
 
 const ROWLABEL={Payload:'Payload',Load:'Load Time',Queue:'Queue at Shovel',Spot:'Spot at Shovel',
- DumpIdle:'Dump Idle',Dumping:'Dumping',FullHaul:'Full Haul',EmptyHaul:'Empty Haul',Residual:'Residual (basis)'};
+ DumpIdle:'Dump Idle',Dumping:'Dumping',FullHaul:'Full Haul',EmptyHaul:'Empty Haul',Residual:'Residual'};
 const ORDER=['Payload','Load','Queue','Spot','DumpIdle','Dumping','FullHaul','EmptyHaul'];
 function fmtTime(s){const m=Math.floor(s/60),x=Math.round(s-m*60);return m+':'+(x<10?'0':'')+x;}
 function leadStr(k,lm){   // returns {uom,tgt,act} for the KPI/UOM/Target/Actual columns
@@ -2910,17 +3398,17 @@ function waterfallSVG(o){
   const raw=(hi-lo)/5,mag=Math.pow(10,Math.floor(Math.log10(raw))),nn=raw/mag,step=(nn<1.5?1:nn<3?2:nn<7?5:10)*mag;
   for(let v=Math.ceil(lo/step)*step;v<=hi;v+=step){const x=X(v);
     g+=`<line x1="${x}" y1="${top}" x2="${x}" y2="${plotBot}" stroke="${GL}" stroke-width="1.2"/>`;
-    g+=`<text x="${x}" y="${plotBot+14}" text-anchor="middle" font-size="9" fill="var(--muted)">${fmt(Math.round(v))}</text>`;}
+    g+=`<text x="${x}" y="${plotBot+14}" text-anchor="middle" font-size="6.3" fill="var(--muted)">${fmt(Math.round(v))}</text>`;}
   // horizontal row separators
   for(let i=0;i<=n;i++){const y=top+i*rowH;g+=`<line x1="0" y1="${y}" x2="${W}" y2="${y}" stroke="${GL}" stroke-width="1"/>`;}
   // header bar (same colour as the gridlines)
   g+=`<rect x="0" y="0" width="${W}" height="${hdrH}" fill="${GL}"/>`;
   const hy=hdrH/2+4;
-  g+=`<text x="${xKPI}" y="${hy}" text-anchor="end" font-size="11" font-weight="700" fill="#33373e">KPI</text>`;
-  g+=`<text x="${xUOM}" y="${hy}" text-anchor="middle" font-size="11" font-weight="700" fill="#33373e">UOM</text>`;
-  g+=`<text x="${xTgt}" y="${hy}" text-anchor="end" font-size="11" font-weight="700" fill="#33373e">Target</text>`;
-  g+=`<text x="${xAct}" y="${hy}" text-anchor="end" font-size="11" font-weight="700" fill="#33373e">Actual</text>`;
-  if(o.title) g+=`<text x="${(LX+RX)/2}" y="${hy}" text-anchor="middle" font-size="11.5" font-weight="700" fill="#33373e">${o.title}</text>`;
+  g+=`<text x="${xKPI}" y="${hy}" text-anchor="end" font-size="7.7" font-weight="700" fill="#33373e">KPI</text>`;
+  g+=`<text x="${xUOM}" y="${hy}" text-anchor="middle" font-size="7.7" font-weight="700" fill="#33373e">UOM</text>`;
+  g+=`<text x="${xTgt}" y="${hy}" text-anchor="end" font-size="7.7" font-weight="700" fill="#33373e">Target</text>`;
+  g+=`<text x="${xAct}" y="${hy}" text-anchor="end" font-size="7.7" font-weight="700" fill="#33373e">Actual</text>`;
+  if(o.title) g+=`<text x="${(LX+RX)/2}" y="${hy}" text-anchor="middle" font-size="8.05" font-weight="700" fill="#33373e">${o.title}</text>`;
   // connectors
   for(let i=0;i<items.length-1;i++){const x=X(items[i].end);
     g+=`<line x1="${x}" y1="${rowY(i)+rowH/2}" x2="${x}" y2="${rowY(i+1)+rowH/2}" stroke="#8a92a0" stroke-width="1" stroke-dasharray="3 3" opacity="0.7"/>`;}
@@ -2932,23 +3420,24 @@ function waterfallSVG(o){
         +`<rect x="${bx}" y="${byy}" width="21" height="13" rx="2.5" fill="#eef0f7" stroke="#41419e" stroke-width="0.7"/>`
         +`<rect x="${bx+4}" y="${byy+6}" width="2.3" height="4" fill="#41419e"/><rect x="${bx+8}" y="${byy+4}" width="2.3" height="6" fill="#41419e"/><rect x="${bx+12}" y="${byy+7}" width="2.3" height="3" fill="#41419e"/>`
         +`</g>`;}
-    g+=`<text x="${xKPI}" y="${cy}" text-anchor="end" font-size="12" font-weight="700" fill="${it.kind==='anchor'?'#2b2f36':it.color}">${it.label}</text>`;
+    g+=`<text x="${xKPI}" y="${cy}" text-anchor="end" font-size="8.4" font-weight="700" fill="${it.kind==='anchor'?'#2b2f36':it.color}">${it.label}</text>`;
     if(it.kind==='step'&&it.col){const c=it.col;
-      g+=`<text x="${xUOM}" y="${cy}" text-anchor="middle" font-size="10.5" fill="#6b7280">${c.uom}</text>`;
-      g+=`<text x="${xTgt}" y="${cy}" text-anchor="end" font-size="10.5" font-weight="700" fill="#2b2f36">${c.tgt}</text>`;
-      g+=`<text x="${xAct}" y="${cy}" text-anchor="end" font-size="10.5" font-weight="700" fill="${it.color}">${c.act}</text>`;}
+      g+=`<text x="${xUOM}" y="${cy}" text-anchor="middle" font-size="7.35" fill="#6b7280">${c.uom}</text>`;
+      g+=`<text x="${xTgt}" y="${cy}" text-anchor="end" font-size="7.35" font-weight="700" fill="#2b2f36">${c.tgt}</text>`;
+      g+=`<text x="${xAct}" y="${cy}" text-anchor="end" font-size="7.35" font-weight="700" fill="${it.color}">${c.act}</text>`;}
     g+=`<rect x="${x1}" y="${by}" width="${w}" height="${barH}" fill="${it.color}" fill-opacity="${it.kind==='anchor'?1:0.92}"/>`;
-    if(it.kind==='anchor') g+=`<text x="${(x1+x2)/2}" y="${cy}" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">${fmt(it.val)}</text>`;
-    else g+=`<text x="${it.delta>=0?x2+4:x1-4}" y="${cy}" text-anchor="${it.delta>=0?'start':'end'}" font-size="10.5" font-weight="700" fill="${it.color}">${(it.delta>=0?'+':'−')+fmt(Math.abs(it.delta))}</text>`;
+    if(it.kind==='anchor') g+=`<text x="${(x1+x2)/2}" y="${cy}" text-anchor="middle" font-size="7.7" font-weight="700" fill="#fff">${fmt(it.val)}</text>`;
+    else g+=`<text x="${it.delta>=0?x2+4:x1-4}" y="${cy}" text-anchor="${it.delta>=0?'start':'end'}" font-size="7.35" font-weight="700" fill="${it.color}">${(it.delta>=0?'+':'−')+fmt(Math.abs(it.delta))}</text>`;
     if(it.segs&&it.segs.length&&it.delta<0){const tot=it.segs.reduce((s,r)=>s+r[1],0)||1;
       let cx=x1;
       it.segs.forEach((r,si)=>{const sw=w*r[1]/tot;
         if(si<it.segs.length-1) g+=`<line x1="${cx+sw}" y1="${by}" x2="${cx+sw}" y2="${by+barH}" stroke="#fff" stroke-width="0.8" opacity="0.85"/>`;
         const maxc=Math.floor((sw-4)/5.0);
         if(maxc>=5){const t=r[0].length>maxc?r[0].slice(0,maxc-1)+'…':r[0];
-          g+=`<text x="${cx+3}" y="${cy-0.5}" font-size="8.2" font-weight="600" fill="#fff">${t}<title>${r[0]} · ${r[1]}h</title></text>`;}
+          g+=`<text x="${cx+3}" y="${cy-0.5}" font-size="5.74" font-weight="600" fill="#fff">${t}<title>${r[0]} · ${r[1]}h</title></text>`;}
         cx+=sw;});}});
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%">${g}</svg>`;
+  const svgStyle=o.svgStyle||'width:100%';
+  return `<svg viewBox="0 0 ${W} ${H}" style="${svgStyle}">${g}</svg>`;
 }
 function buildWF(wf){
   const av=wf.availDecomp,hasAv=!!av;
@@ -2980,13 +3469,8 @@ function matBars(wf){
 function renderWF(){
   const wf=V().trucksWF;
   document.getElementById('wf').innerHTML=buildWF(wf);
-  const av=wf.availDecomp;
-  const avb=av?`<span class="badge">Cat 797 (act / bud): PA <b>${av.pa.act.toFixed(1)}</b>/${av.pa.bud.toFixed(1)}% · UA <b>${av.ua.act.toFixed(1)}</b>/${av.ua.bud.toFixed(1)}% · OE <b>${av.oe.act.toFixed(1)}</b>/${av.oe.bud.toFixed(1)}%</span>`
-    :`<span class="badge">NOH%: <b>${wf.nohPct.toFixed(1)}%</b></span>`;
-  const pot=av?wf.schedPotential:wf.potential;
-  document.getElementById('ind').innerHTML=avb+
-    `<span class="badge">Empty/Full ratio: <b>${wf.emptyFullRatio.toFixed(3)}</b> (target 1.000)</span>
-     <span class="badge">Potential <b>${fmt(pot)}</b> → Actual <b>${fmt(wf.actual)}</b></span>`;
+  document.getElementById('ind').innerHTML=
+    `<span class="badge">Empty/Full ratio: <b>${wf.emptyFullRatio.toFixed(3)}</b> (target 1.000)</span>`;
   // refresh any open truck box below the waterfall for the current view
   Object.keys(TRUCKBOX).forEach(w=>{const sec=document.getElementById(TRUCKBOX[w][0]); if(sec&&!sec.hidden)renderTruckBox(w);});
 }
@@ -3040,6 +3524,8 @@ function renderShovBox(which){
   else document.getElementById('chLoadS2').innerHTML=drawBoxPlot(a.loadbox,{axisLabel:'load time (min)',unit:' min',scale:1/60,dec:1,hideOutliers:true});
 }
 let shovAllOpen=false;   // Expand all / Contract all for the shovel-waterfall box plots
+let wfPrioMode='perShift';   // Last 14 Shifts toggle: 'perShift' | 'last14'
+let wfCrewFilter='All';      // Last 14 Shifts crew filter: 'All' | specific crew name
 function toggleShovExpand(){
   shovAllOpen=!shovAllOpen;
   Object.keys(SHOVBOX).forEach(w=>{const [sid,bid,lbl]=SHOVBOX[w];const sec=document.getElementById(sid),btn=document.getElementById(bid);
@@ -3078,7 +3564,7 @@ function drawTop3(ranked,total){
     const who=r.contrib.slice(0,2).map(c=>c.attr).filter((v,i,a)=>a.indexOf(v)===i);
     return `<b>${r.label}</b> −${fmt(r.loss)} t${who.length?` (mostly ${who.join(', ')})`:''}`;});
   const topShare=(ranked.slice(0,3).reduce((s,r)=>s+r.loss,0)/total*100);
-  return `<b style="color:#8a2c22">Fix first:</b> ${parts.join(' &nbsp;·&nbsp; ')}. <span style="color:var(--muted);font-weight:400">Top 3 = ${topShare.toFixed(0)}% of all tonnes lost this view.</span>`;
+  return `<b style="color:#8a2c22">Fix first:</b> ${parts.join(' &nbsp;·&nbsp; ')}. <span style="color:var(--muted);font-weight:400">Top 3 = ${topShare.toFixed(0)}% of all lost tonnes.</span>`;
 }
 function drawLossHeat(ent,order,labelMap,firstColHdr,cap){
   const all=ent.filter(e=>e.loss>0).sort((a,b)=>b.loss-a.loss);
@@ -3119,24 +3605,24 @@ function drawShovelLossTable(units){
   const heat=v=>{const loss=v<0?-v:0,op=(loss/mxcell*0.82).toFixed(3);return `<td class="hmcell" style="background:rgba(204,60,50,${loss?op:0})">${loss?fmt(loss):''}</td>`;};
   const SHVHDR={PA:'PA',UA:'UA',OE:'OE',Payload:'Payload',Spot:'Spot Time',Load:'Load Time',Hang:'Hang Time'};
   const cg=`<colgroup><col style="width:13%"><col style="width:8%"><col style="width:8%"><col style="width:6%">`
-    +SHVORDER.map(()=>'<col style="width:8%">').join('')+`<col style="width:9%"></colgroup>`;
+    +SHVORDER.map(()=>'<col style="width:8%">').join('')+`</colgroup>`;
   let h=`<div class="hmwrap svwrap"><table class="hmtab svloss">${cg}<tr><th>Shovel (loads)</th><th>Actual</th><th>Potential</th><th>Score</th>`
-    +SHVORDER.map(k=>`<th>${SHVHDR[k]}</th>`).join('')+'<th>Total lost</th></tr>';
+    +SHVORDER.map(k=>`<th>${SHVHDR[k]}</th>`).join('')+'</tr>';
   // column totals over all shovels (footer)
   const colTot={}; SHVORDER.forEach(k=>colTot[k]=0); let gPot=0,gAct=0,gLoss=0;
   gkeys.forEach(gk=>{const mem=groups[gk],g=GRP[gk];
     const sp=mem.reduce((s,m)=>s+m.pot,0),sa=mem.reduce((s,m)=>s+m.act,0),sl=mem.reduce((s,m)=>s+m.loss,0),ssc=sp?sa/sp*100:0;
     h+=`<tr class="svgrp"><td>${g.lbl} · ${g.sub} <span class="gc">(${mem.length})</span></td>`
       +`<td style="font-weight:700">${fmt(sa)}</td><td>${fmt(sp)}</td><td style="color:${scol(ssc)};font-weight:700">${ssc.toFixed(0)}%</td>`
-      +SHVORDER.map(()=>'<td></td>').join('')+`<td class="hmtot">${sl>0?'−'+fmt(sl)+' t':''}</td></tr>`;
+      +SHVORDER.map(()=>'<td></td>').join('')+`</tr>`;
     mem.forEach(m=>{const u=m.u;
       h+=`<tr id="su${m.i}" class="svrow" onclick="selShovUnit(${m.i})"><td class="hmk"><b>${u.unit}</b> <span class="gc">(${u.n})</span></td>`
         +`<td style="font-weight:700">${fmt(m.act)}</td><td>${fmt(m.pot)}</td><td style="color:${scol(m.sc)};font-weight:700">${m.sc.toFixed(0)}%</td>`
         +SHVORDER.map(k=>heat(m.comps[k]||0)).join('')
-        +`<td class="hmtot">${m.loss>0?'−'+fmt(m.loss)+' t':'0'}</td></tr>`;
+        +`</tr>`;
       SHVORDER.forEach(k=>{const v=m.comps[k]||0; if(v<0)colTot[k]+=-v;}); gPot+=m.pot; gAct+=m.act; gLoss+=m.loss;});});
   h+=`<tr class="hmfoot"><td class="hmk">Total (all ${meta.length})</td><td style="font-weight:700">${fmt(gAct)}</td><td>${fmt(gPot)}</td><td>${gPot?(gAct/gPot*100).toFixed(0)+'%':''}</td>`
-    +SHVORDER.map(k=>`<td>${colTot[k]>0?'−'+fmt(colTot[k]):''}</td>`).join('')+`<td class="hmtot">−${fmt(gLoss)} t</td></tr>`;
+    +SHVORDER.map(k=>`<td>${colTot[k]>0?'−'+fmt(colTot[k]):''}</td>`).join('')+`</tr>`;
   return h+'</table></div><div class="foot">Redder cell = more tonnes lost to that factor. Click a shovel row to load its cycle waterfall and status timeline below.</div>';
 }
 // Merged Haulage loss matrix — lanes grouped by loading shovel, each row interactive (drives the lane waterfall below).
@@ -3261,17 +3747,139 @@ function buildShovWF2(wf){
     rows.push({label:lbl,delta:wf.rows[k],col:leadStr(k,wf.lm)}));
   return waterfallSVG({startLabel:'Potential',startVal:av?wf.schedPotential:wf.potential,endLabel:'Actual',endVal:wf.actual,rows});
 }
+// Ranked driver-impact table for the Productivity Waterfall Summary section.
+// wfType: 'trucks' | 'shovel' — controls row keys and drill-down tab links.
+function buildWFImpactTable(wfType,wf){
+  const av=wf.availDecomp;
+  const fullPot=wf.potential, actual=wf.actual, gap=actual-fullPot;
+  const drivers=[];
+  if(av){
+    const tabA=wfType==='shovel'?'shovel2':'trucks';
+    drivers.push({label:'PA (Availability)',delta:av.pa.t,act:av.pa.act.toFixed(1)+'%',bud:av.pa.bud.toFixed(1)+'%',tab:tabA});
+    drivers.push({label:'UA (Standby)',     delta:av.ua.t,act:av.ua.act.toFixed(1)+'%',bud:av.ua.bud.toFixed(1)+'%',tab:tabA});
+    drivers.push({label:'OE (Delay)',       delta:av.oe.t,act:av.oe.act.toFixed(1)+'%',bud:av.oe.bud.toFixed(1)+'%',tab:tabA});
+  }
+  const rowMeta=wfType==='shovel'
+    ?[['Payload','Payload','shovel2'],['Spot','Spot at Shovel','shovel2'],['Load','Load Time','shovel2'],['Hang','Hang Time','shovel2']]
+    :[['Payload','Payload','trucks'],['Load','Load Time','loading'],['Queue','Queue at Shovel','trucks'],
+      ['Spot','Spot at Shovel','loading'],['DumpIdle','Dump Idle','trucks'],['Dumping','Dumping','trucks'],
+      ['FullHaul','Full Haul','haulage'],['EmptyHaul','Empty Haul','haulage']];
+  rowMeta.forEach(([k,label,tab])=>{
+    const d=wf.rows[k]; if(d==null)return;
+    const lm=wf.lm&&wf.lm[k]; let act='—',bud='—';
+    if(lm){if(lm.unit==='t'){act=fmt(lm.actual)+' t';bud=fmt(lm.target)+' t';}
+            else{act=fmtTime(lm.actual);bud=fmtTime(lm.target);}}
+    drivers.push({label,delta:d,act,bud,tab});
+  });
+  if(!drivers.length)return '<div class="foot">No driver data.</div>';
+  drivers.sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta));
+  const absgap=Math.abs(gap)||1;
+  let s=`<table class="lanetab" style="margin-top:6px"><tr><th>Driver</th><th>Budget</th><th>Actual KPI</th>`
+      +`<th style="text-align:right">&#916; Tonnes</th><th style="text-align:right">% of Gap</th><th></th></tr>`;
+  drivers.forEach(d=>{
+    if(d.delta===0)return;
+    const col=d.delta<0?'#b3382b':'#2f7a44';
+    const pct=(Math.abs(d.delta)/absgap*100).toFixed(1);
+    const sign=d.delta>=0?'+':'−';
+    s+=`<tr><td>${d.label}</td><td style="color:var(--muted)">${d.bud}</td><td>${d.act}</td>`
+      +`<td style="text-align:right;font-weight:700;color:${col}">${sign}${fmt(Math.abs(d.delta))} t</td>`
+      +`<td style="text-align:right;color:${col}">${pct}%</td>`
+      +`<td><button class="tlbtn" onclick="setTab('${d.tab}')">Open</button></td></tr>`;
+  });
+  s+='</table>';
+  return s;
+}
+// Combined productivity waterfall — uses truck potential as the single reference point
+// so that only truck KPI rows are needed and the bridge closes exactly with zero residual.
+function buildCombinedProductivityWF(twf,swf){
+  const potential=twf?(twf.schedPotential||twf.potential):0;
+  const actual=twf?twf.actual:(swf?swf.actual:0);
+  const rows=[];
+  if(twf){
+    const av=twf.availDecomp;
+    if(av){
+      rows.push({label:'Trucks · PA',delta:av.pa.t,col:{uom:'%',tgt:av.pa.bud.toFixed(1),act:av.pa.act.toFixed(1)}});
+      rows.push({label:'Trucks · UA',delta:av.ua.t,col:{uom:'%',tgt:av.ua.bud.toFixed(1),act:av.ua.act.toFixed(1)}});
+      rows.push({label:'Trucks · OE',delta:av.oe.t,col:{uom:'%',tgt:av.oe.bud.toFixed(1),act:av.oe.act.toFixed(1)}});
+    }
+    [['Payload','Payload'],['Load','Load Time'],['Queue','Queue at Shovel'],['Spot','Spot at Shovel'],
+     ['DumpIdle','Dump Idle'],['Dumping','Dumping'],['FullHaul','Full Haul'],['EmptyHaul','Empty Haul']]
+    .forEach(([k,lbl])=>{
+      const d=twf.rows[k]; if(d==null)return;
+      const lm=twf.lm&&twf.lm[k];
+      let col=null;
+      if(lm){if(lm.unit==='t')col={uom:'wTons',tgt:lm.target.toFixed(0),act:lm.actual.toFixed(0)};
+             else col={uom:'mm:ss',tgt:fmtTime(lm.target),act:fmtTime(lm.actual)};}
+      rows.push({label:'Trucks · '+lbl,delta:d,col});
+    });
+  }
+  rows.sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta));
+  const sumD=rows.reduce((s,r)=>s+r.delta,0);
+  const residual=actual-potential-sumD;
+  if(Math.abs(residual)>0.5)rows.push({label:'Residual',delta:residual,color:'#9aa0ab'});
+  return waterfallSVG({
+    startLabel:'Potential',
+    startVal:potential,
+    endLabel:'Actual',
+    endVal:actual,
+    rows,
+    svgStyle:'width:70%;display:block;margin:0 auto'
+  });
+}
+// Combined ranked KPI impact table for both fleets — sorted by absolute tonnage impact.
+function buildCombinedWFImpactTable(twf,swf){
+  const potential=Math.max(twf?(twf.schedPotential||twf.potential):0,swf?(swf.schedPotential||swf.potential):0);
+  const actual=twf?twf.actual:(swf?swf.actual:0);
+  const gap=actual-potential;
+  const absgap=Math.abs(gap)||1;
+  const drivers=[];
+  const pushDrivers=(wf,prefix,avTab,rowTab)=>{
+    if(!wf)return;
+    const av=wf.availDecomp;
+    if(av){
+      drivers.push({label:prefix+' · PA (Availability)',delta:av.pa.t,act:av.pa.act.toFixed(1)+'%',bud:av.pa.bud.toFixed(1)+'%',tab:avTab});
+      drivers.push({label:prefix+' · UA (Standby)',    delta:av.ua.t,act:av.ua.act.toFixed(1)+'%',bud:av.ua.bud.toFixed(1)+'%',tab:avTab});
+      drivers.push({label:prefix+' · OE (Delay)',      delta:av.oe.t,act:av.oe.act.toFixed(1)+'%',bud:av.oe.bud.toFixed(1)+'%',tab:avTab});
+    }
+    const meta=prefix==='Trucks'
+      ?[['Payload','Payload','trucks'],['Load','Load Time','loading'],['Queue','Queue at Shovel','trucks'],
+        ['Spot','Spot at Shovel','loading'],['DumpIdle','Dump Idle','trucks'],['Dumping','Dumping','trucks'],
+        ['FullHaul','Full Haul','haulage'],['EmptyHaul','Empty Haul','haulage']]
+      :[['Payload','Payload','shovel2'],['Spot','Spot at Shovel','shovel2'],
+        ['Load','Load Time','shovel2'],['Hang','Hang Time','shovel2']];
+    meta.forEach(([k,lbl,tab])=>{
+      const d=wf.rows[k]; if(d==null)return;
+      const lm=wf.lm&&wf.lm[k]; let act='—',bud='—';
+      if(lm){if(lm.unit==='t'){act=fmt(lm.actual)+' t';bud=fmt(lm.target)+' t';}
+             else{act=fmtTime(lm.actual);bud=fmtTime(lm.target);}}
+      drivers.push({label:prefix+' · '+lbl,delta:d,act,bud,tab});
+    });
+  };
+  pushDrivers(twf,'Trucks','trucks','trucks');
+  pushDrivers(swf,'Shovels','shovel2','shovel2');
+  if(!drivers.length)return '<div class="foot">No driver data.</div>';
+  drivers.sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta));
+  let s=`<table class="lanetab" style="margin-top:6px;font-size:10px"><tr><th>Driver</th><th>Budget</th><th>Actual KPI</th>`
+      +`<th style="text-align:right">&#916; Tonnes</th><th style="text-align:right">% of Gap</th><th></th></tr>`;
+  drivers.forEach(d=>{
+    if(d.delta===0)return;
+    const col=d.delta<0?'#b3382b':'#2f7a44';
+    const pct=(Math.abs(d.delta)/absgap*100).toFixed(1);
+    const sign=d.delta>=0?'+':'−';
+    s+=`<tr><td>${d.label}</td><td style="color:var(--muted)">${d.bud}</td><td>${d.act}</td>`
+      +`<td style="text-align:right;font-weight:700;color:${col}">${sign}${fmt(Math.abs(d.delta))} t</td>`
+      +`<td style="text-align:right;color:${col}">${pct}%</td>`
+      +`<td><button class="tlbtn" onclick="setTab('${d.tab}')">Open</button></td></tr>`;
+  });
+  s+='</table>';
+  return s;
+}
 function renderShovWF2(){
   const wf=V().shovelWF2;
   if(!wf){document.getElementById('shovwf2').innerHTML='<div class="foot">No shovel cycle data for this view.</div>';document.getElementById('shov2ind').innerHTML='';document.getElementById('shovOW2').innerHTML='';return;}
   document.getElementById('shovwf2').innerHTML=buildShovWF2(wf);
-  const av=wf.availDecomp;
-  const pot=av?wf.schedPotential:wf.potential, sc=pot?wf.actual/pot*100:0;
-  const avb=av?`<span class="badge">Shovels (act/bud): PA <b>${av.pa.act.toFixed(1)}</b>/${av.pa.bud.toFixed(1)}% · UA <b>${av.ua.act.toFixed(1)}</b>/${av.ua.bud.toFixed(1)}% · OE <b>${av.oe.act.toFixed(1)}</b>/${av.oe.bud.toFixed(1)}%</span>`:'';
-  document.getElementById('shov2ind').innerHTML=avb+
-    `<span class="badge">Score <b>${sc.toFixed(1)}%</b></span>`+
-    (wf.hbneg?`<span class="badge">${wf.hbneg}/${wf.n} loads in groups with hang-budget clamped to 0</span>`:'')+
-    `<span class="badge">Potential <b>${fmt(pot)}</b> → Actual <b>${fmt(wf.actual)}</b></span>`;
+  document.getElementById('shov2ind').innerHTML=
+    (wf.hbneg?`<span class="badge">${wf.hbneg}/${wf.n} loads in groups with hang-budget clamped to 0</span>`:'');
   // ore/waste breakdown (cycle rows only)
   let ow='';
   ['Ore','Waste'].forEach(m=>{const mw=wf.byMaterial[m]; if(!mw)return;
@@ -3302,11 +3910,8 @@ function selShovUnit(i){
   document.querySelectorAll('#shovList2 tr').forEach(t=>t.classList.remove('sel'));
   const row=document.getElementById('su'+i); if(row)row.classList.add('sel');
   const av=u.availDecomp;
-  const pot=av?u.schedPotential:u.potential, sc=pot?u.actual/pot*100:0;
-  const avb=av?`<span class="badge">PA <b>${av.pa.act.toFixed(1)}</b>/${av.pa.bud.toFixed(1)}% · UA <b>${av.ua.act.toFixed(1)}</b>/${av.ua.bud.toFixed(1)}% · OE <b>${av.oe.act.toFixed(1)}</b>/${av.oe.bud.toFixed(1)}%</span>`:'';
   document.getElementById('shovUnitWF2').innerHTML=
-    `<h4 class="mini">Shovel ${u.unit} · ${u.type==='BE495'?'BE 495':'HIT 8000'} — ${u.n} loads &nbsp;·&nbsp; Potential ${fmt(pot)} → Actual ${fmt(u.actual)} &nbsp;·&nbsp; ${sc.toFixed(1)}%${av?'':' &nbsp;·&nbsp; cycle only'}</h4>`
-    +(avb?`<div style="margin:3px 0 6px">${avb}</div>`:'')
+    `<h4 class="mini">Shovel ${u.unit} · ${u.type==='BE495'?'BE 495':'HIT 8000'} — ${u.n} loads${av?'':' &nbsp;·&nbsp; cycle only'}</h4>`
     +buildShovWF2(u);
   // mirror the selection onto the equipment status timeline (single-shovel = large band, like the trucks-at-dump graph)
   const tlsub=document.getElementById('tlsub2'); if(tlsub)tlsub.textContent='('+view+' · '+u.unit+')';
@@ -3404,20 +4009,30 @@ function drawTruckFlow(d){
   if(!shovels.length)return '<div class="foot">No flow data.</div>';
   // Layout constants (3-column, wider canvas)
   const W=1200,pad=26,nodeW=13,gap=10;
-  const ax=200;   // col A prev-dump node x (labels 0–194 to the left)
-  const bx=530;   // col B shovel node x
-  const cx=W-230-nodeW;  // col C dump node x (=957, labels 970+ to the right)
+  const bx=530;   // col B shovel node x (fixed centre)
+  // Distance-scaled columns: each node's x-position ∝ haul distance, so ribbon LENGTH encodes distance.
+  const kmC={},kmCw={};   // per-dump full-haul km (load-weighted)
+  filt.forEach(f=>{kmC[f.to]=(kmC[f.to]||0)+(f.km||0)*(f.n||0);kmCw[f.to]=(kmCw[f.to]||0)+(f.n||0);});
+  dumps.forEach(k=>{kmC[k]=kmCw[k]?kmC[k]/kmCw[k]:0;});
+  const kmA={},kmAw={};   // per-prev-dump empty-haul km (load-weighted)
+  pfilt.forEach(f=>{kmA[f.from]=(kmA[f.from]||0)+(f.km||0)*(f.n||0);kmAw[f.from]=(kmAw[f.from]||0)+(f.n||0);});
+  prevDumps.forEach(k=>{kmA[k]=kmAw[k]?kmA[k]/kmAw[k]:0;});
+  const maxC=Math.max(1,...dumps.map(k=>kmC[k]||0)), maxA=Math.max(1,...prevDumps.map(k=>kmA[k]||0));
+  const rMin=bx+nodeW+130, rMax=W-215;   // right region (dump nodes): longer full-haul ⇒ farther right
+  const lMax=bx-175, lMin=120;           // left region (prev-dump nodes): longer empty-haul ⇒ farther left
+  const cxOf=k=>rMin+(kmC[k]/maxC)*(rMax-rMin);
+  const axOf=k=>lMax-(kmA[k]/maxA)*(lMax-lMin);
   colTot=Math.max(shovels.reduce((s,k)=>s+srcF[k],0),dumps.reduce((s,k)=>s+dstF[k],0),1);
   const nShovGaps=Math.max(0,shovels.length-1);
   const H=Math.max(400,32*Math.max(shovels.length,dumps.length,prevDumps.length)+70);
   const sc=(H-2*pad-gap*nShovGaps)/colTot;
-  // Build node position objects
+  // Build node position objects (x carries the distance encoding)
   const posB={};let yB=pad;
   shovels.forEach(k=>{const h=Math.max(4,srcF[k]*sc);posB[k]={x:bx,y:yB,h,off:0,poff:0};yB+=h+gap;});
   const posC={};let yC=pad;
-  dumps.forEach(k=>{const h=Math.max(4,dstF[k]*sc);posC[k]={x:cx,y:yC,h,off:0};yC+=h+gap;});
+  dumps.forEach(k=>{const h=Math.max(4,dstF[k]*sc);posC[k]={x:cxOf(k),y:yC,h,off:0};yC+=h+gap;});
   const posA={};let yA=pad;
-  prevDumps.forEach(k=>{const h=Math.max(4,srcP[k]*sc);posA[k]={x:ax,y:yA,h,off:0};yA+=h+gap;});
+  prevDumps.forEach(k=>{const h=Math.max(4,srcP[k]*sc);posA[k]={x:axOf(k),y:yA,h,off:0};yA+=h+gap;});
   const H_svg=Math.max(yA,yB,yC)+pad;
   // Locked-load stats (right flows only)
   const lLk={},lTt={},dLk={},dTt={};
@@ -3449,14 +4064,16 @@ function drawTruckFlow(d){
     const th=f.tons*sc,y1=P.y+P.off,y2=S.y+S.poff;P.off+=th;S.poff+=th;
     const x1=P.x+nodeW,x2=S.x,xm=(x1+x2)/2,c=f.mat==='Waste'?CWASTE:CORE;
     const lf=f.n?(f.nlock||0)/f.n:0;
-    ribL+=`<path d="M${x1} ${y1} C${xm} ${y1},${xm} ${y2},${x2} ${y2} L${x2} ${y2+th} C${xm} ${y2+th},${xm} ${y1+th},${x1} ${y1+th} Z" fill="${c}" fill-opacity="0.30"><title>${shortId(f.from)} → ${shortId(f.to)}: ${f.tons.toLocaleString()}t (prev dump → shovel) · ${Math.round(lf*100)}% locked</title></path>`;
+    ribL+=`<path d="M${x1} ${y1} C${xm} ${y1},${xm} ${y2},${x2} ${y2} L${x2} ${y2+th} C${xm} ${y2+th},${xm} ${y1+th},${x1} ${y1+th} Z" fill="${c}" fill-opacity="0.30"><title>${shortId(f.from)} → ${shortId(f.to)}: ${f.tons.toLocaleString()}t (prev dump → shovel) · ${f.km||0} km empty · ${Math.round(lf*100)}% locked</title></path>`;
     if(lf>0){const lth=th*lf;
       ribL+=`<path d="M${x1} ${y1} C${xm} ${y1},${xm} ${y2},${x2} ${y2} L${x2} ${y2+lth} C${xm} ${y2+lth},${xm} ${y1+lth},${x1} ${y1+lth} Z" fill="url(#lockhatch)" pointer-events="none"/>`;}
+    if(th>=9&&f.km){const ky=y2+th/2+3;
+      dlabels+=`<text x="${x2-5}" y="${ky}" text-anchor="end" font-size="8.5" font-weight="600" fill="#2b2f36" stroke="#fff" stroke-width="2.4" paint-order="stroke" pointer-events="none">${f.km} km</text>`;}
   });
   // Column header labels
-  let nd=`<text x="${ax+nodeW/2}" y="${pad-12}" text-anchor="middle" font-size="9.5" font-weight="700" letter-spacing="0.8" fill="#8fa0b8">PREV DUMP</text>`;
+  let nd=`<text x="${(lMin+lMax)/2}" y="${pad-12}" text-anchor="middle" font-size="9.5" font-weight="700" letter-spacing="0.8" fill="#8fa0b8">◄ EMPTY HAUL · PREV DUMP</text>`;
   nd+=`<text x="${bx+nodeW/2}" y="${pad-12}" text-anchor="middle" font-size="9.5" font-weight="700" letter-spacing="0.8" fill="var(--muted)">SHOVEL</text>`;
-  nd+=`<text x="${cx+nodeW/2}" y="${pad-12}" text-anchor="middle" font-size="9.5" font-weight="700" letter-spacing="0.8" fill="var(--muted)">DUMP</text>`;
+  nd+=`<text x="${(rMin+rMax)/2}" y="${pad-12}" text-anchor="middle" font-size="9.5" font-weight="700" letter-spacing="0.8" fill="var(--muted)">DUMP · FULL HAUL ►</text>`;
   // Col A: prev-dump nodes (far left) — label to the left, colour distinct from shovels
   prevDumps.forEach(k=>{const p=posA[k];
     const lbl=shortId(k)+'  ·  '+Math.round(srcP[k]).toLocaleString()+' t';
@@ -3534,9 +4151,9 @@ function drawTimeline(tl,opt){
   const Q=tl.queue||{},qmax=tl.qmax||1,MM=tl.mat||{};
   const tlbase=(tl.base!=null?tl.base:6);
   const plotBot=top+eq.length*rowH;
-  for(let hh=0;hh<=12;hh++){const x=X(hh*60),major=hh%2===0;   // vertical gridlines every hour (minor = dashed)
-    g+=`<line x1="${x}" y1="${top}" x2="${x}" y2="${plotBot}" stroke="var(--line)" stroke-width="${major?0.7:0.45}"${major?'':' stroke-dasharray="2 3"'}/>`;
-    if(major)g+=`<text x="${x}" y="${top-5}" text-anchor="middle" font-size="9" fill="var(--muted)">${(tlbase+hh)%24}:00</text>`;}
+  for(let hh=0;hh<=12;hh++){const x=X(hh*60);   // solid vertical gridline + time label every hour (matches Hourly tonnes chart)
+    g+=`<line x1="${x}" y1="${top}" x2="${x}" y2="${plotBot}" stroke="var(--line)" stroke-width="0.7"/>`;
+    g+=`<text x="${x}" y="${top-5}" text-anchor="middle" font-size="9" fill="var(--muted)">${String((tlbase+hh)%24).padStart(2,'0')}:00</text>`;}
   for(let i=0;i<=eq.length;i++){const y=top+i*rowH;g+=`<line x1="${left}" y1="${y}" x2="${left+plotW}" y2="${y}" stroke="#eef0f4" stroke-width="0.5"/>`;}   // horizontal row separators
   const barPad=rowH>=16?2:1, barH=Math.max(2,rowH-barPad*2);
   eq.forEach((k,i)=>{const y=top+i*rowH;const mc=MM[k]==='Waste'?'#d08a1f':(MM[k]==='Ore'?'#1f9e8b':'var(--ink)');
@@ -3595,13 +4212,11 @@ function drawShovelBand(tl,k){
   const qmax=Math.max(1,tl.qmax||1),stepC=qmax<=8?1:Math.ceil(qmax/8),H=top+rowH+42;
   const X=m=>left+m/TOT*plotW,base=tl.base!=null?tl.base:6,yb=top+rowH,yq=v=>yb-v/qmax*rowH;
   let g='';
-  for(let hh=0;hh<=12;hh+=2){const x=X(hh*60);g+=`<text x="${x}" y="${top-12}" text-anchor="middle" font-size="9.5" fill="var(--muted)">${(base+hh)%24}:00</text>`;}
+  for(let hh=0;hh<=12;hh++){const x=X(hh*60);g+=`<text x="${x}" y="${top-12}" text-anchor="middle" font-size="9.5" fill="var(--muted)">${(base+hh)%24}:00</text>`;}
   for(let c=0;c<=qmax;c+=stepC){const gy=yq(c);
     g+=`<line x1="${left}" y1="${gy}" x2="${left+plotW}" y2="${gy}" stroke="${c===0?'#aab2c0':'#e6e9f0'}" stroke-width="${c===0?1:0.7}"${c===0?'':' stroke-dasharray="3 3"'}/>`;
     g+=`<text x="${left-5}" y="${gy+3}" text-anchor="end" font-size="9" fill="var(--muted)">${c}</text>`;}
-  for(let hh=0;hh<=12;hh+=2){const x=X(hh*60);g+=`<line x1="${x}" y1="${top}" x2="${x}" y2="${yb}" stroke="var(--line)" stroke-width="0.5"/>`;}
-  const mc=(tl.mat&&tl.mat[k]==='Waste')?'#d08a1f':((tl.mat&&tl.mat[k]==='Ore')?'#1f9e8b':'var(--ink)');
-  g+=`<text x="${left}" y="${top-14}" font-size="12" font-weight="700" fill="${mc}">${k}</text>`;
+  for(let hh=0;hh<=12;hh++){const x=X(hh*60);g+=`<line x1="${x}" y1="${top}" x2="${x}" y2="${yb}" stroke="#e8ebf0" stroke-width="0.9"/>`;}
   const aq=tl.avgq?tl.avgq[k]:null, ah=tl.avgh?tl.avgh[k]:null, parts=[];
   if(aq!=null)parts.push('queue '+aq); if(ah!=null)parts.push('hang '+ah);
   if(parts.length) g+=`<text x="${left+plotW}" y="${top-14}" text-anchor="end" font-size="9.5" fill="var(--muted)">${parts.join(' · ')} min/load</text>`;
@@ -3610,24 +4225,26 @@ function drawShovelBand(tl,k){
   if(qs&&qs.length){let d='';qs.forEach((p,j)=>{const x=X(p[0]);d+=(j===0?`M${x} ${yq(p[1])}`:` L${x} ${yq(qs[j-1][1])} L${x} ${yq(p[1])}`);});
     d+=` L${X(TOT)} ${yq(qs[qs.length-1][1])}`;
     g+=`<path d="${d}" fill="none" stroke="#fff" stroke-width="3" stroke-opacity="0.6"/><path d="${d}" fill="none" stroke="#111" stroke-width="1.7"/>`;}
-  // TPNOH trend overlay (right axis) — tonnes per net operating hour, per hour bucket
-  const tp=tl.tphr?tl.tphr[k]:null;
+  // Total-tonnes trend overlay (right axis) — tonnes loaded per hour bucket; avg hang min/load shown under each point
+  const tp=tl.tonhr?tl.tonhr[k]:null, hgL=tl.hanghr?tl.hanghr[k]:null, qL=tl.queuehr?tl.queuehr[k]:null;
   if(tp&&tp.some(v=>v!=null)){
     const tpmax=Math.max(...tp.filter(v=>v!=null)), niceMax=Math.max(100,Math.ceil(tpmax/100)*100);
     const yT=v=>yb-v/niceMax*rowH, Xc=i=>X((i+0.5)*60), TPC='#6a3fd0';
     for(let s=0;s<=4;s++){const tv=niceMax*s/4,gy=yT(tv);g+=`<text x="${left+plotW+5}" y="${gy+3}" font-size="8.5" fill="${TPC}">${Math.round(tv)}</text>`;}
-    g+=`<text x="${left+plotW+34}" y="${top+rowH/2}" transform="rotate(-90 ${left+plotW+34} ${top+rowH/2})" text-anchor="middle" font-size="9" fill="${TPC}">TPNOH (t/h)</text>`;
+    g+=`<text x="${left+plotW+34}" y="${top+rowH/2}" transform="rotate(-90 ${left+plotW+34} ${top+rowH/2})" text-anchor="middle" font-size="9" fill="${TPC}">tonnes</text>`;
     let run=[]; const runs=[];
-    tp.forEach((v,i)=>{if(v==null){if(run.length)runs.push(run);run=[];}else run.push([Xc(i),yT(v),v]);});
+    tp.forEach((v,i)=>{if(v==null){if(run.length)runs.push(run);run=[];}else run.push([Xc(i),yT(v),v,i]);});
     if(run.length)runs.push(run);
     runs.forEach(r=>{if(r.length>1){const dd='M'+r.map(p=>p[0]+' '+p[1]).join(' L ');
       g+=`<path d="${dd}" fill="none" stroke="#fff" stroke-width="3.4" stroke-opacity="0.7"/><path d="${dd}" fill="none" stroke="${TPC}" stroke-width="1.8"/>`;}
-      r.forEach(p=>{g+=`<circle cx="${p[0]}" cy="${p[1]}" r="2.4" fill="${TPC}"/><text x="${p[0]}" y="${p[1]-5}" text-anchor="middle" font-size="8" fill="${TPC}">${fmt(p[2])}</text>`;});});}
+      r.forEach(p=>{g+=`<circle cx="${p[0]}" cy="${p[1]}" r="2.4" fill="${TPC}"/><text x="${p[0]}" y="${p[1]-6}" text-anchor="middle" font-size="11" font-weight="700" fill="${TPC}">${fmt(p[2])}</text>`;
+        if(hgL&&hgL[p[3]]!=null)g+=`<text x="${p[0]}" y="${p[1]+13}" text-anchor="middle" font-size="9" fill="#b3760f">hang ${hgL[p[3]]} min/ld</text>`;
+        if(qL&&qL[p[3]]!=null)g+=`<text x="${p[0]}" y="${p[1]+24}" text-anchor="middle" font-size="9" fill="#2f6fb3">queue ${qL[p[3]]} min/ld</text>`;});});}
   const cs=tl.seg[k],sy=yb+4,shH=11;
   g+=`<text x="${left-5}" y="${sy+shH/2+2.5}" text-anchor="end" font-size="7.5" fill="var(--muted)">status</text>`;
   if(cs&&cs.length)cs.forEach(s=>{const x=X(s[0]),w=Math.max(0.5,s[1]/TOT*plotW);
     g+=`<rect x="${x}" y="${sy}" width="${w}" height="${shH}" fill="${TLCOL[s[2]]||'#ccc'}"><title>${k} · ${s[3]||s[2]} · ${s[1]} min</title></rect>`;});
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%">${g}</svg><div class="badges" style="margin-top:6px"><span class="badge"><b style="color:#111">—</b> trucks at shovel (0–${qmax})</span><span class="badge"><b style="color:#6a3fd0">—</b> TPNOH (t/h, right axis)</span><span class="badge">base strip = status:</span>`+
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%">${g}</svg><div class="badges" style="margin-top:6px"><span class="badge"><b style="color:#111">—</b> trucks at shovel (0–${qmax})</span><span class="badge"><b style="color:#6a3fd0">—</b> tonnes (right axis) · under point: <b style="color:#b3760f">hang</b> / <b style="color:#2f6fb3">queue</b> min/ld</span>`+
     Object.entries(TLCOL).map(([kk,c])=>`<span class="badge"><b style="color:${c}">■</b> ${kk}</span>`).join('')+`</div>`;
 }
 function drawPayBox(pay,tg){
@@ -3694,6 +4311,225 @@ function factorsFor(which){
     if(val<0&&(!con||val<con.val))con={label:FLBL[k]||k,val};}
   return {pro,con};
 }
+function recFmtVal(fmtKey,v){
+  if(v==null||!isFinite(v))return '—';
+  if(fmtKey==='pct'||fmtKey==='pct1')return v.toFixed(1)+'%';
+  if(fmtKey==='pts')return (v>0?'+':'')+v.toFixed(1)+' pts';
+  if(fmtKey==='hours')return v.toFixed(1)+' h';
+  if(fmtKey==='mmss'||fmtKey==='mmss_')return fmtTime(v);
+  if(fmtKey==='ratio')return v.toFixed(3);
+  if(fmtKey==='rate')return fmt(v)+' t/h';
+  if(fmtKey==='tons')return fmt(v)+' t';
+  return String(v);
+}
+function recGapVal(fmtKey,delta){
+  if(delta==null||!isFinite(delta))return '—';
+  const s=delta>0?'+':(delta<0?'-':'');
+  const a=Math.abs(delta);
+  if(fmtKey==='pct'||fmtKey==='pct1'||fmtKey==='pts')return s+a.toFixed(1)+' pts';
+  if(fmtKey==='hours')return s+a.toFixed(1)+' h';
+  if(fmtKey==='mmss'||fmtKey==='mmss_')return s+fmtTime(a);
+  if(fmtKey==='ratio')return s+a.toFixed(3);
+  if(fmtKey==='rate')return s+fmt(a)+' t/h';
+  if(fmtKey==='tons')return s+fmt(a)+' t';
+  return s+a;
+}
+function recMiss(actual,target,good){
+  if(actual==null||target==null||!isFinite(actual)||!isFinite(target))return null;
+  const gap=(good==='low')?(actual-target):(target-actual);
+  if(!(gap>0.0001))return null;
+  const missPct=Math.abs(target)>0.0001?(gap/Math.abs(target))*100:gap;
+  const absGap=Math.abs(gap);
+  let priority=3;
+  if(missPct>=15||absGap>=10)priority=1;
+  else if(missPct>=5||absGap>=3)priority=2;
+  return {gap,missPct,absGap,priority};
+}
+function collectRecommendations(){
+  const v=V(), recs=[];
+  if(!v)return recs;
+  const sc=viewScores(v);
+  [['Haulage Score',sc.hSc,'trucks'],['Loading Score',sc.lSc,'shovel2']].forEach(([label,val,tab])=>{
+    const miss=recMiss(val,100,'high');
+    if(!miss)return;
+    recs.push({priority:(val<90?1:miss.priority),impact:miss.missPct,area:'Shift Overview',measure:label,
+      actual:recFmtVal('pct1',val),baseline:recFmtVal('pct1',100),gap:recGapVal('pct1',val-100),tab});
+  });
+  if(sc.tm!=null&&Math.abs(sc.tm)>3){
+    const over=Math.abs(sc.tm)-3;
+    recs.push({priority:(over>=6?1:(over>=2?2:3)),impact:over,area:'Truck / Shovel Balance',measure:'Truck Match',
+      actual:recFmtVal('pts',sc.tm),baseline:'±3.0 pts',gap:`${over.toFixed(1)} pts outside band`,tab:'balance'});
+  }
+  const tb=v.truckBalance;
+  if(tb&&tb.pct!=null&&Math.abs(tb.pct)>5){
+    const over=Math.abs(tb.pct)-5;
+    recs.push({priority:(over>=10?1:(over>=4?2:3)),impact:over,area:'Truck / Shovel Balance',measure:'Truck Balance',
+      actual:recFmtVal('pct1',tb.pct),baseline:'±5.0%',gap:`${over.toFixed(1)} pts outside band`,tab:'balance'});
+  }
+  (v.availability||[]).forEach(r=>{
+    [['PA',r.PA,r.bPA,'pct1'],['UA',r.UA,r.bUA,'pct1'],['OE',r.OE,r.bOE,'pct1'],['TPNOH',r.tpnoh,r.btpnoh,'rate']].forEach(([label,a,b,fmtKey])=>{
+      const miss=recMiss(a,b,'high');
+      if(!miss)return;
+      recs.push({priority:((label!=='TPNOH'&&miss.absGap>=5)?1:miss.priority),impact:miss.missPct,area:AVLBL[r.group]||r.group,measure:label,
+        actual:recFmtVal(fmtKey,a),baseline:recFmtVal(fmtKey,b),gap:recGapVal(fmtKey,a-b),tab:'overview'});
+    });
+  });
+  const addProdRecs=(data,area,tab)=>{
+    if(!data||!data.cols||!data.cols.length||!data.rows)return;
+    const all=data.cols[0];
+    data.rows.forEach(r=>{
+      if(!r||!r.good||r.label==='Potential')return;
+      const val=r.vals&&r.vals[all.id];
+      if(!val||val.t==null||val.a==null)return;
+      const miss=recMiss(val.a,val.t,r.good);
+      if(!miss)return;
+      let priority=miss.priority;
+      if(['Total Dumped','Total Moved','NOH','Dig Rate','Truck Productivity'].includes(r.label))priority=1;
+      else if(r.tons)priority=Math.min(priority,2);
+      recs.push({priority,impact:miss.missPct,area,measure:all.label+' · '+r.label,
+        actual:recFmtVal(r.fmt,val.a),baseline:recFmtVal(r.fmt,val.t),gap:recGapVal(r.fmt,val.a-val.t),tab});
+    });
+  };
+  addProdRecs(v.shovelProd,'Shovel Productivity','shovprod');
+  addProdRecs(v.truckProd,'Truck Productivity','truckprod');
+  recs.sort((a,b)=>(a.priority-b.priority)||(b.impact-a.impact)||a.measure.localeCompare(b.measure));
+  return recs;
+}
+function renderRecommendations(){
+  const el=document.getElementById('recBody');
+  const meta={1:{label:'High priority',color:'#ff0000'},2:{label:'Medium priority',color:'#b85c00'},3:{label:'Low priority',color:'#f0c030'}};
+  const gSign=n=>(n>=0?'+':'')+Math.round(n).toLocaleString();
+
+  // Derive available crews from DATA.shifts (preserve insertion order, skip blanks)
+  const crews=[...new Set(DATA.shifts.map(s=>s.crew).filter(Boolean))].sort();
+  const hasCrew=crews.length>0;
+
+  // ---- Crew selector ----
+  let h='';
+  if(hasCrew){
+    const btnStyle=(on)=>`margin-right:5px;padding:3px 11px;border-radius:4px;border:1px solid ${on?'#3f51b5':'#ccd'};background:${on?'#3f51b5':'#f5f7fa'};color:${on?'#fff':'#445'};font-weight:${on?'600':'400'};cursor:pointer;font-size:13.5px`;
+    h+=`<div style="margin-bottom:12px"><b style="font-size:13px;color:#445;margin-right:6px">Crew:</b>`;
+    h+=`<button onclick="wfCrewFilter='All';renderRecommendations()" style="${btnStyle(wfCrewFilter==='All')}">All</button>`;
+    crews.forEach(c=>{h+=`<button onclick="wfCrewFilter='${c}';renderRecommendations()" style="${btnStyle(wfCrewFilter===c)}">Crew ${c}</button>`;});
+    h+=`</div>`;
+  }
+
+  // ---- Per-crew KPI summary table (shown in "All" mode when crew data available) ----
+  if(hasCrew && wfCrewFilter==='All'){
+    const perCrew=(V()&&V().recommendationProdWF&&V().recommendationProdWF.perCrew)||{};
+    const crewsWithData=crews.filter(c=>perCrew[c]);
+    if(crewsWithData.length){
+      h+=`<h3 style="margin:0 0 6px;font-size:17.25px;color:#344">KPI Summary — Last 14 Shifts per Crew</h3>`;
+      h+=`<p style="margin:0 0 10px;font-size:12px;color:var(--muted)">Aggregated over each crew's last ${_REC_WINDOW_SHIFTS||14} shifts for the active <b>${view}</b> view. <span style="color:#2f8f4e">■ green = ≥90%</span> · <span style="color:#c98a1f">■ amber = 70–90%</span> · <span style="color:#c0392b">■ red = &lt;70%</span>.</p>`;
+      const scoreCol=v=>{if(v==null)return '<td style="text-align:center;color:#aaa">—</td>'; const c=v>=90?'#2f8f4e':(v>=70?'#c98a1f':'#c0392b'); return `<td style="text-align:center;font-weight:700;color:${c}">${v.toFixed(1)}%</td>`;};
+      const pctCol=v=>{if(v==null)return '<td style="text-align:center;color:#aaa">—</td>'; const c=v>=90?'#2f8f4e':(v>=70?'#c98a1f':'#c0392b'); return `<td style="text-align:center;color:${c}">${v.toFixed(1)}%</td>`;};
+      const tCol=v=>v==null?'<td style="text-align:right;color:#aaa">—</td>':`<td style="text-align:right">${(v/1000).toFixed(0)}k t</td>`;
+      h+=`<table class="lanetab"><tr><th>KPI</th><th>UOM</th>`+crewsWithData.map(c=>`<th>Crew ${c}<br><span style="font-weight:400;font-size:10px;color:#888">(${perCrew[c].shiftCount} shifts)</span></th>`).join('')+`</tr>`;
+      // Haulage Score
+      h+=`<tr><td>Haulage Score</td><td>%</td>`+crewsWithData.map(c=>{const tw=perCrew[c].trucksWF; const sc=tw?(tw.actual/(tw.schedPotential||tw.potential)*100):null; return scoreCol(sc);}).join('')+`</tr>`;
+      // Loading Score
+      h+=`<tr><td>Loading Score</td><td>%</td>`+crewsWithData.map(c=>{const sw=perCrew[c].shovelWF2; const sc=sw?(sw.actual/(sw.schedPotential||sw.potential)*100):null; return scoreCol(sc);}).join('')+`</tr>`;
+      // PA, UA, OE — from truck waterfall availDecomp if available
+      ['PA','UA','OE'].forEach(kpi=>{
+        h+=`<tr><td>Cat 797 ${kpi}</td><td>%</td>`+crewsWithData.map(c=>{
+          const tw=perCrew[c].trucksWF; const av=tw&&tw.availDecomp;
+          const v=av?(kpi==='PA'?av.pa&&av.pa.pct:(kpi==='UA'?av.ua&&av.ua.pct:av.oe&&av.oe.pct)):null;
+          return pctCol(v);
+        }).join('')+`</tr>`;
+      });
+      // Actual tonnes
+      h+=`<tr><td>Actual Dumped</td><td>kt</td>`+crewsWithData.map(c=>{const tw=perCrew[c].trucksWF; return tCol(tw?tw.actual:null);}).join('')+`</tr>`;
+      h+=`</table>`;
+    }
+    h+=`<hr style="margin:16px 0 12px;border:none;border-top:1px solid #dde1e8">`;
+  }
+
+  // ---- Waterfall Priority Gaps ----
+  // When a crew is selected, use that crew's perCrew wfPrioritySummary for last14 mode
+  const perCrewEntry=(wfCrewFilter!=='All')
+    ? ((V()&&V().recommendationProdWF&&V().recommendationProdWF.perCrew&&V().recommendationProdWF.perCrew[wfCrewFilter])||null)
+    : null;
+  const wfps=(V()&&V().wfPrioritySummary)||null;
+  const wfpData=perCrewEntry
+    ? (perCrewEntry.wfPrioritySummary||null)
+    : (wfps?(wfps[wfPrioMode]||wfps['perShift']):null);
+  h+=`<h3 style="margin:0 0 6px;font-size:20.25px;color:#344">Waterfall Priority Gaps</h3>`;
+  h+=`<p style="margin:0 0 10px;font-size:16.2px;color:var(--muted)">Waterfall components with |gap| &gt; 7,500 t vs. Potential, ranked by absolute tonnage loss. Threshold: <b>High</b> &gt;50k t · <b>Medium</b> 15k–50k t · <b>Low</b> 7.5k–15k t. Gains shown separately below.</p>`;
+  if(wfCrewFilter==='All'){
+    h+=`<div style="margin-bottom:10px">`+['perShift','last14'].map(m=>{
+      const lbl=m==='perShift'?'This Shift':'Last 14 Shifts';
+      const on=wfPrioMode===m;
+      return `<button onclick="wfPrioMode='${m}';renderRecommendations()" style="margin-right:6px;padding:4px 12px;border-radius:4px;border:1px solid ${on?'#3f51b5':'#ccd'};background:${on?'#3f51b5':'#f5f7fa'};color:${on?'#fff':'#445'};font-weight:${on?'600':'400'};cursor:pointer;font-size:16.2px">${lbl}</button>`;
+    }).join('')+`</div>`;
+  } else {
+    h+=`<p style="margin:0 0 8px;font-size:13px;color:#445">Showing last ${perCrewEntry?perCrewEntry.shiftCount:0} shifts for <b>Crew ${wfCrewFilter}</b> (${view}).</p>`;
+  }
+  if(!wfpData||(!wfpData.losses.length&&!wfpData.gains.length)){
+    h+='<div class="foot">No waterfall components exceed the 7,500 t threshold for this view/period.</div>';
+  } else {
+    const scLabel=perCrewEntry?`Crew ${wfCrewFilter} · last ${perCrewEntry.shiftCount} shifts`:(wfPrioMode==='last14'?`Last ${wfpData.shiftCount} shifts`:'This shift');
+    if(wfpData.losses.length){
+      const losBadges=[1,2,3].map(k=>{const n=wfpData.losses.filter(r=>r.priority===k).length; return n?`<span class="badge"><b style="color:${meta[k].color}">${meta[k].label}</b> ${n}</span>`:''}).join('');
+      h+=`<h4 class="mini" style="font-size:16.2px">Losses — below Potential</h4>${losBadges}`;
+      h+=`<table class="lanetab"><tr><th>#</th><th>Component</th><th style="text-align:right">&Delta; Tonnes</th><th>Priority</th><th>Supporting KPIs</th><th></th></tr>`;
+      wfpData.losses.forEach((r,i)=>{
+        const m=meta[r.priority]||{label:'—',color:'#888'};
+        h+=`<tr>
+          <td style="color:#888;font-size:17.55px">${i+1}</td>
+          <td style="font-weight:600;font-size:17.55px">${r.component}</td>
+          <td style="text-align:right;font-weight:700;color:${m.color};white-space:nowrap;font-size:17.55px">${gSign(r.delta_t)} t</td>
+          <td><span class="badge" style="color:${m.color};background:${m.color}18;font-size:17.55px;white-space:nowrap">${m.label}</span></td>
+          <td style="font-size:17.55px;color:var(--muted)">${r.kpis}</td>
+          <td><button class="tlbtn" onclick="setTab('${r.tab}')">Open</button></td>
+        </tr>`;
+      });
+      h+='</table>';
+    }
+    if(wfpData.gains.length){
+      h+=`<h4 class="mini" style="margin-top:12px;color:#2f7a44;font-size:16.2px">Above Budget — gains vs. Potential</h4>`;
+      h+=`<table class="lanetab"><tr><th>#</th><th>Component</th><th style="text-align:right">&Delta; Tonnes</th><th></th><th>Supporting KPIs</th><th></th></tr>`;
+      wfpData.gains.forEach((r,i)=>{
+        h+=`<tr>
+          <td style="color:#888;font-size:14.85px">${i+1}</td>
+          <td style="font-weight:600;font-size:14.85px">${r.component}</td>
+          <td style="text-align:right;font-weight:700;color:#2f7a44;white-space:nowrap;font-size:14.85px">${gSign(r.delta_t)} t</td>
+          <td></td>
+          <td style="font-size:14.85px;color:var(--muted)">${r.kpis}</td>
+          <td><button class="tlbtn" onclick="setTab('${r.tab}')">Open</button></td>
+        </tr>`;
+      });
+      h+='</table>';
+    }
+    h+=`<div class="foot" style="margin-top:8px;font-size:14.85px">Potential: <b>${wfpData.potential.toLocaleString()}</b> t &rarr; Actual: <b>${wfpData.actual.toLocaleString()}</b> t &nbsp;·&nbsp; Net gap: <b>${gSign(wfpData.actual-wfpData.potential)}</b> t &nbsp;·&nbsp; ${scLabel}</div>`;
+  }
+  h+=`<hr style="margin:18px 0 14px;border:none;border-top:1px solid #dde1e8">`;
+
+  // ---- Production Waterfall (always last 14 shifts) ----
+  let twf, swf, prodShiftCount;
+  if(perCrewEntry){
+    twf=perCrewEntry.trucksWF; swf=perCrewEntry.shovelWF2; prodShiftCount=perCrewEntry.shiftCount;
+  } else {
+    const prodPeriod=(V()&&V().recommendationProdWF&&V().recommendationProdWF.last14)||null;
+    prodShiftCount=prodPeriod&&prodPeriod.shiftCount ? prodPeriod.shiftCount : 1;
+    twf=prodPeriod?prodPeriod.trucksWF:null;
+    swf=prodPeriod?prodPeriod.shovelWF2:null;
+  }
+  h+=`<h3 style="margin:0 0 4px;font-size:17.25px;color:#344">Production Waterfall</h3>`;
+  const periodLabel=perCrewEntry?`Crew ${wfCrewFilter} · last ${prodShiftCount} shifts`:`last ${prodShiftCount} shifts`;
+  h+=`<p style="margin:0 0 12px;font-size:11.5px;color:var(--muted)">Truck productivity bridge from Scheduled Potential to Actual for the active <b>${view}</b> toggle selection (${periodLabel}). Potential is the truck fleet's scheduled potential; KPI rows are truck-only so the bridge closes exactly. Shovel performance is shown in the Shovels tab.</p>`;
+  if(!twf&&!swf){
+    h+='<div class="foot">No waterfall data available for this view.</div>';
+  } else {
+    const tPot=twf?(twf.schedPotential||twf.potential):0;
+    const combAct=twf?twf.actual:(swf?swf.actual:0);
+    const combGap=combAct-tPot, gSignC=combGap>=0?'+':'';
+    h+=`<h4 class="mini" style="margin-top:4px;font-size:13.8px">Trucks &mdash; Scheduled Potential&nbsp;${fmt(tPot)}&nbsp;t &rarr; Actual&nbsp;${fmt(combAct)}&nbsp;t (gap&nbsp;${gSignC}${fmt(combGap)}&nbsp;t)</h4>`;
+    h+=buildCombinedProductivityWF(twf,swf);
+    h+='<div class="foot" style="margin-top:8px"><b>Residual</b> is the unexplained accounting difference between truck Potential and Actual after all truck KPI rows are summed. It arises from interactions between KPIs, rounding, or data not captured in the individual rows. A small residual (positive or negative) is normal; a large residual suggests a measurement gap worth investigating.</div>';
+  }
+
+  el.innerHTML=h;
+}
 function renderTrends(){
   document.getElementById('trsub').textContent='('+view+')';
   const chron=DATA.shifts.slice().reverse();   // oldest → newest
@@ -3721,6 +4557,17 @@ function renderTrends(){
   mk('chTrMatch',{type:'line',data:{labels,datasets:[line('Truck Match',match,'#7a4fd0')]},
     options:baseOpt({y:{ticks:{...F10}}})});
 }
+function renderMatPlace(){   // Material Placement Sankey (its own tab) — SVG, renders even without Chart.js
+  document.getElementById('hcsub2').textContent='('+view+')';
+  document.getElementById('hc2').innerHTML=drawTruckFlow(V().haulCycles);
+  document.getElementById('hcleg2').innerHTML=`<span class="badge"><b style="color:${CORE}">■</b> ore</span><span class="badge"><b style="color:${CWASTE}">■</b> waste</span><span class="badge">▨ hatched = locked (un-optimized) loads · % under shovel/dump nodes</span><span class="badge">ribbon width ∝ tonnage · ribbon length ∝ haul distance (left = empty, right = full) · km label = actual/expected full-haul</span>`;
+}
+function recalcHourTargets(ci){   // cumulative target lines counting only the currently-visible components
+  const ds=ci.data.datasets,n=(ds[0].data||[]).length,vis=k=>ci.isDatasetVisible(k);
+  const o=ds[3]._seg||0,w=ds[4]._seg||0,np=ds[5]._seg||0;
+  const c3=o,c4=(vis(0)?o:0)+w,c5=(vis(0)?o:0)+(vis(1)?w:0)+np;
+  ds[3].data=Array(n).fill(c3); ds[4].data=Array(n).fill(c4); ds[5].data=Array(n).fill(c5);
+}
 function renderOverview(){
   const a=V().analytics;
   const sc=viewScores(V());
@@ -3732,16 +4579,14 @@ function renderOverview(){
     if(fac&&fac.con)s+=` <span style="color:#b3382b">▼ ${fac.con.label} −${fmt(-fac.con.val)} t</span>`;
     return s;};
   const tmw=matchWord(sc.tm);
+  const rest=`${seg('Haulage',sc.hSc,'trucks',factorsFor('haul'))} &nbsp;·&nbsp; ${seg('Loading',sc.lSc,'shovel2',factorsFor('load'))} &nbsp;·&nbsp; Truck match <b>${sc.tm==null?'—':(sc.tm>0?'+':'')+sc.tm.toFixed(0)+'%'}</b> (${tmw}).`;
   document.getElementById('ovExec').innerHTML=
-    `<span class="exlead">This shift · ${view}:</span> ${seg('Haulage',sc.hSc,'trucks',factorsFor('haul'))} &nbsp;·&nbsp; ${seg('Loading',sc.lSc,'shovel2',factorsFor('load'))} &nbsp;·&nbsp; Truck match <b>${sc.tm==null?'—':(sc.tm>0?'+':'')+sc.tm.toFixed(0)+'%'}</b> (${tmw}).`;
+    `<span class="exlead">This shift · ${view}:</span>`+
+    `<div class="exmq"><div class="exmq-in"><span class="exmq-seg">${rest}</span><span class="exmq-seg">${rest}</span></div></div>`;
   document.getElementById('ovsub').textContent='('+view+')';
   document.getElementById('ovkpisub').textContent='('+view+')';
   document.getElementById('ovKpi').innerHTML=buildAvCards(V().availability);
   applyAvExpand();   // re-apply Expand all / Contract all state after a view/shift change
-  // shovel placement Sankey (SVG, so it renders even without Chart.js)
-  document.getElementById('hcsub2').textContent='('+view+')';
-  document.getElementById('hc2').innerHTML=drawTruckFlow(V().haulCycles);
-  document.getElementById('hcleg2').innerHTML=`<span class="badge"><b style="color:${CORE}">■</b> ore</span><span class="badge"><b style="color:${CWASTE}">■</b> waste</span><span class="badge">▨ hatched = locked (un-optimized) loads · % under shovel/dump nodes</span><span class="badge">left: prev dump + tonnes arriving · centre: shovel + TPNOH (t/h) · right: dump + total tonnes · ribbon ∝ tonnage · km = actual/expected haul dist</span>`;
   if(typeof Chart==='undefined'){document.getElementById('ovsub').textContent='('+view+') — charts need internet to load Chart.js';return;}
   const F10={font:{size:10}},F9={font:{size:9}};
   const hasProd=a.cumulative.actual.some(x=>x!=null&&x>0);
@@ -3784,14 +4629,8 @@ function renderOverview(){
     {label:'Actual',data:c.actual,borderColor:'#2a349e',backgroundColor:'rgba(42,52,158,.16)',spanGaps:false,tension:.2,pointRadius:0,fill:true,borderWidth:2.4},
     {label:'Target (plan '+(c.plan/1000).toFixed(0)+'k)',data:c.target,borderColor:'#888',borderDash:[6,4],pointRadius:0,borderWidth:1.5}];
   if(projSeries)cumDs.push({label:'Projection'+(projEnd!=null?' ('+(projEnd/1000).toFixed(0)+'k)':''),data:projSeries,borderColor:'#e0952a',backgroundColor:'rgba(224,149,42,.16)',borderDash:[5,3],pointRadius:0,borderWidth:2,fill:true,spanGaps:false,tension:.2});
-  if(reqSeries)cumDs.push({label:'Future-shift pace ('+(reqF/1000).toFixed(0)+'k)',data:reqSeries,borderColor:'#b3382b',backgroundColor:'#b3382b',borderDash:[3,3],pointRadius:0,borderWidth:1.5,spanGaps:false});
-  mk('chCum',{type:'line',data:{labels:c.labels,datasets:cumDs},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{right:46}},interaction:{intersect:false,mode:'index'},plugins:{legend:{labels:{boxWidth:12,...F10}}},scales:{x:{ticks:{maxTicksLimit:9,...F9}},y:{suggestedMax:Math.max(c.plan||0,reqF||0,projEnd||0)*1.05,ticks:{...F10,callback:v=>(v/1000)+'k'}}}},plugins:[cumEndLabel,projEndLabel]});
-  // readable month run-rate note below the chart
-  {const nt=document.getElementById('cumReqNote');
-   if(nt){ if(reqF!=null&&c.futureShifts>0){const vs=c.plan?(reqF/c.plan-1)*100:null;
-       nt.style.display='block';
-       nt.innerHTML=`<b style="color:#b3382b">Future-shift pace (red dashed):</b> to hit this month's ore + waste budget of <b>${(c.monthBudget/1e6).toFixed(2)} Mt</b> (<b>${fmt(c.monthActual)} t</b> done so far), the remaining <b>${c.futureShifts}</b> shifts must each average <b>${fmt(reqF)} t</b>${vs!=null?` — <b style="color:${vs>=0?'#b3382b':'#2f7a44'}">${vs>=0?'+':''}${vs.toFixed(0)}%</b> vs the ${fmt(c.plan)} t/shift plan`:''}.`;
-     } else nt.style.display='none'; }}
+  if(reqSeries)cumDs.push({label:'Future-shift pace ('+(reqF/1000).toFixed(0)+'k)',data:reqSeries,borderColor:'#b3382b',backgroundColor:'#b3382b',borderDash:[3,3],pointRadius:0,borderWidth:1.5,spanGaps:false,hidden:true});
+  mk('chCum',{type:'line',data:{labels:c.labels,datasets:cumDs},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{right:46}},interaction:{intersect:false,mode:'index'},plugins:{legend:{labels:{boxWidth:12,...F10}}},scales:{x:{ticks:{...F9,autoSkip:false,maxRotation:0,callback:(v,i)=>{const L=c.labels[i];return (L&&L.slice(-3)===':00')?L:'';}},grid:{color:ctx=>{const L=c.labels[ctx.index];return (L&&L.slice(-3)===':00')?'rgba(0,0,0,0.08)':'transparent';}}},y:{suggestedMax:Math.max(c.plan||0,reqF||0,projEnd||0)*1.05,ticks:{...F10,callback:v=>(v/1000)+'k'}}}},plugins:[cumEndLabel,projEndLabel]});
   const hh=a.hourly;
   const cO=hh.targetOre,cW=hh.targetOre+hh.targetWaste,cN=hh.targetOre+hh.targetWaste+hh.targetNonProd;
   // default the panel to the most recent hour with production
@@ -3802,14 +4641,14 @@ function renderOverview(){
     {label:'Prod. ore',data:hh.ore,backgroundColor:barColor('#1f9e8b'),stack:'s'},
     {label:'Prod. waste',data:hh.waste,backgroundColor:barColor('#d08a1f'),stack:'s'},
     {label:'Non-prod.',data:hh.nonprod,backgroundColor:barColor('#9aa0ab'),stack:'s'},
-    {type:'line',label:'Target ore/hr',data:hh.hours.map(()=>cO),borderColor:'#1f9e8b',borderDash:[6,4],pointRadius:0,borderWidth:1.8,stack:'to'},
-    {type:'line',label:'Target +waste/hr',data:hh.hours.map(()=>cW),borderColor:'#d08a1f',borderDash:[6,4],pointRadius:0,borderWidth:1.8,stack:'tw'},
-    {type:'line',label:'Target +non-prod/hr',data:hh.hours.map(()=>cN),borderColor:'#e23b32',borderDash:[6,4],pointRadius:0,borderWidth:2,stack:'tn'}
+    {type:'line',label:'Target ore/hr',data:hh.hours.map(()=>cO),_seg:hh.targetOre,borderColor:'#1f9e8b',borderDash:[6,4],pointRadius:0,borderWidth:1.8,stack:'to'},
+    {type:'line',label:'Target +waste/hr',data:hh.hours.map(()=>cW),_seg:hh.targetWaste,borderColor:'#d08a1f',borderDash:[6,4],pointRadius:0,borderWidth:1.8,stack:'tw'},
+    {type:'line',label:'Target +non-prod/hr',data:hh.hours.map(()=>cN),_seg:hh.targetNonProd,borderColor:'#e23b32',borderDash:[6,4],pointRadius:0,borderWidth:2,stack:'tn'}
   ]},options:{responsive:true,maintainAspectRatio:false,onClick:(e,els,ch)=>{
       let idx=(els&&els.length)?els[0].index:null;
       if(idx==null){const xs=ch.scales.x; if(xs){const v=xs.getValueForPixel(e.x); if(v!=null){const r=Math.round(v); if(r>=0&&r<hh.hours.length)idx=r;}}}
       if(idx!=null)renderHourDetail(idx);
-    },plugins:{legend:{labels:{boxWidth:11,...F9}},tooltip:{callbacks:{label:ctx=>{const L=ctx.dataset.label;if(L[0]!=='T')return L+' '+Math.round(ctx.parsed.y)+' t';const seg=L.indexOf('ore/')>=0?hh.targetOre:(L.indexOf('waste')>=0?hh.targetWaste:hh.targetNonProd);return L+' (cum '+Math.round(ctx.parsed.y)+' t; seg '+Math.round(seg)+' t)';}}}},scales:{x:{stacked:true,ticks:{...F9,callback:(v,i)=>[hh.hours[i],'@'+(hh.haulKm&&hh.haulKm[i]!=null?hh.haulKm[i].toFixed(1):'0.0')+'km']}},y:{stacked:true,ticks:{...F10,callback:v=>(v/1000)+'k'}}}}});
+    },plugins:{legend:{onClick:(e,item,legend)=>{const ci=legend.chart,i=item.datasetIndex,pair={0:3,1:4,2:5,3:0,4:1,5:2},v=!ci.isDatasetVisible(i);ci.setDatasetVisibility(i,v);if(pair[i]!=null)ci.setDatasetVisibility(pair[i],v);recalcHourTargets(ci);ci.update();},labels:{boxWidth:11,...F9}},tooltip:{callbacks:{label:ctx=>{const L=ctx.dataset.label;if(L[0]!=='T')return L+' '+Math.round(ctx.parsed.y)+' t';return L+' '+Math.round(ctx.parsed.y)+' t (cum)';}}}},scales:{x:{stacked:true,ticks:{...F9,callback:(v,i)=>hh.hours[i]+':00'}},y:{stacked:true,ticks:{...F10,callback:v=>(v/1000)+'k'}}}}});
   renderHourDetail(hourSel);   // fill the side panel with the default (most recent) hour
   applyHourDet();              // honour the show/hide-detail toggle (also aligns the cumulative chart margin)
 }
@@ -4037,21 +4876,180 @@ function buildProdTable(d,k,emptyMsg){
   document.getElementById(P.body).innerHTML=s+'</table></div>';
 }
 function renderTruckProd(){ buildProdTable(V().truckProd,'tp','No truck productivity data for this view.'); }
-const TABS=[['overview','Shift Overview',0],['balance','Truck / Shovel Balance',0],['shovel2','Shovel Waterfall',0],['loading','Loading drill-down',1],['shovprod','Shovel Productivity',1],['trucks','Truck Waterfall',0],['haulage','Haulage drill-down',1],['truckflow','Truck Flow',1],['delays','Delays & Standby',1],['truckprod','Truck Productivity',1],['hourlyperf','Hourly Production',0],['lube','Fuel and Lube',0],['shiftstats','Shift Stats',0],['trends','Cross-Shift Trends',0],['appendix','Appendix',0],['sandbox','Sandbox',0]];
+function renderPlaybook(){
+  const el=document.getElementById('playbookBody');
+  if(!el)return;
+  const pCol={1:'#e23b32',2:'#b85c00',3:'#e0a41f'};
+  const pLbl={1:'High',2:'Medium',3:'Low'};
+  const recs=(V()&&V().shiftRecs)||[];
+  const sc=viewScores(V());
+  const ana=(V()&&V().analytics)||{};
+  const cumAct=(ana.cumulative&&ana.cumulative.actual)||[];
+  const latestAct=cumAct.reduce((a,v)=>(v!=null?v:a),null);
+  const cumTarget=(ana.cumulative&&ana.cumulative.target)||[];
+  const totalPlan=(ana.cumulative&&ana.cumulative.plan!=null)?ana.cumulative.plan:null;
+  // Plan-to-now = target value at the same 15-min slot as the latest actual reading
+  let _latestPlanIdx=-1; cumAct.forEach((v,i)=>{if(v!=null)_latestPlanIdx=i;});
+  const latestPlan=(_latestPlanIdx>=0&&cumTarget[_latestPlanIdx]!=null)?cumTarget[_latestPlanIdx]:null;
+  const fmt2=v=>(v==null?'—':Math.round(v).toLocaleString());
+  const clr=v=>(v==null?'#888':v>=100?'#2f7a44':v>=90?'#b8830a':'#c0392b');
+  let h='';
+
+  // =========================================================
+  // SECTION 1 — SHIFT HANDOVER & DAILY EXECUTION PLAN
+  // =========================================================
+  h+=`<div style="margin-bottom:24px">`;
+  h+=`<h3 style="margin:0 0 6px;font-size:20px;color:#2b2f36;border-bottom:2px solid #3f51b5;padding-bottom:6px">1 · Shift Handover &amp; Daily Execution Plan</h3>`;
+  h+=`<p style="margin:0 0 10px;font-size:13px;color:var(--muted)">Priority actions for the incoming shift, derived from the Last 14 Shifts analysis. Address items in order — each links to the relevant analysis tab.</p>`;
+
+  if(!recs.length){
+    h+=`<div class="foot">All cycle components are at or within budget for this view. No handover actions required.</div>`;
+  } else {
+    h+=`<table class="lanetab" style="width:100%"><thead><tr>`;
+    h+=`<th style="text-align:left;width:160px;white-space:nowrap">Area</th><th style="text-align:left">Justification</th>`;
+    h+=`<th style="text-align:right;white-space:nowrap;min-width:100px">Actual</th><th style="text-align:right;white-space:nowrap;min-width:100px">Budget</th>`;
+    h+=`<th style="text-align:right;white-space:nowrap;min-width:100px">Gap</th><th style="text-align:right;white-space:nowrap;min-width:110px">Tonnes at Risk</th><th style="width:60px"></th>`;
+    h+=`</tr></thead><tbody>`;
+    [1,2,3].forEach(p=>{
+      const grp=recs.filter(r=>r.priority===p);
+      if(!grp.length)return;
+      h+=`<tr><td colspan="7" style="font-weight:700;font-size:13px;color:${pCol[p]};padding:8px 6px 4px;background:#f8f9fb;border-top:2px solid ${pCol[p]}">${pLbl[p]}-Priority Actions</td></tr>`;
+      grp.forEach(r=>{
+        h+=`<tr>
+          <td style="font-weight:600;white-space:nowrap;font-size:13px">${r.area}</td>
+          <td style="font-size:13px;text-align:left">${r.measure}: ${r.detail}</td>
+          <td style="text-align:right;font-size:13px;white-space:nowrap">${r.actual_label}</td>
+          <td style="text-align:right;font-size:13px;white-space:nowrap">${r.baseline_label}</td>
+          <td style="text-align:right;font-weight:700;color:${pCol[p]};font-size:13px;white-space:nowrap">${r.gap_label}</td>
+          <td style="text-align:right;font-weight:700;color:${pCol[p]};font-size:13px;white-space:nowrap">${r.tonnes_at_risk!=null?r.tonnes_at_risk.toLocaleString()+' t':'—'}</td>
+          <td style="text-align:center"><button class="tlbtn" onclick="setTab('${r.tab}')">Open</button></td>
+        </tr>`;
+      });
+    });
+    h+=`</tbody></table>`;
+  }
+
+  h+=`</div>`;
+
+  // =========================================================
+  // SECTION 2 — PRODUCTION REPORTING & TRACKING
+  // =========================================================
+  h+=`<div style="margin-bottom:24px">`;
+  h+=`<h3 style="margin:0 0 6px;font-size:20px;color:#2b2f36;border-bottom:2px solid #e0a41f;padding-bottom:6px">2 · Production Reporting &amp; Tracking</h3>`;
+
+  // --- KPI summary cards ---
+  const actTxt=latestAct!=null?fmt2(latestAct)+' t':'—';
+  const planTxt=latestPlan!=null?fmt2(latestPlan)+' t':'—';
+  const gapVal=(latestAct!=null&&latestPlan!=null)?(latestAct-latestPlan):null;
+  const gapTxt=gapVal!=null?((gapVal>=0?'+':'')+fmt2(gapVal)+' t'):'—';
+  const gapClr=gapVal==null?'#888':gapVal>=0?'#2f7a44':'#c0392b';
+  const hSc=sc&&sc.hSc!=null?sc.hSc.toFixed(0)+'%':'—';
+  const lSc=sc&&sc.lSc!=null?sc.lSc.toFixed(0)+'%':'—';
+  h+=`<div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:16px">`;
+  [{label:'Cumulative Actual',val:actTxt,col:'#3f51b5'},{label:'Shift Plan (to now)',val:planTxt,col:'#888'},
+   {label:'Gap vs Plan',val:gapTxt,col:gapClr},{label:'Haulage Score',val:hSc,col:clr(sc&&sc.hSc)},
+   {label:'Loading Score',val:lSc,col:clr(sc&&sc.lSc)}].forEach(({label,val,col})=>{
+    h+=`<div style="background:#f4f6fa;border:1px solid #dde1e8;border-radius:8px;padding:10px 18px;min-width:140px">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px">${label}</div>
+      <div style="font-size:22px;font-weight:700;color:${col}">${val}</div>
+    </div>`;
+  });
+  h+=`</div>`;
+
+  // --- Shift production targets (from Shift Overview plan data) ---
+  const hly=ana.hourly||{};
+  const tgtTotal=totalPlan!=null?totalPlan:null;
+  const tgtOreHr=hly.targetOre!=null?hly.targetOre:null;
+  const tgtWstHr=hly.targetWaste!=null?hly.targetWaste:null;
+  const tgtNpHr=hly.targetNonProd!=null?hly.targetNonProd:null;
+  const tgtOre=tgtOreHr!=null?tgtOreHr*12:null;
+  const tgtWst=tgtWstHr!=null?tgtWstHr*12:null;
+  const tgtNp=tgtNpHr!=null?tgtNpHr*12:null;
+  h+=`<h4 style="margin:10px 0 6px;font-size:14px;color:#344">Shift Production Targets</h4>`;
+  h+=`<div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:14px">`;
+  [{label:'Total Shift Target',val:tgtTotal!=null?fmt2(tgtTotal)+' t':'—',col:'#e0a41f',sub:null},
+   {label:'Prod. Ore Target',val:tgtOre!=null?fmt2(tgtOre)+' t':'—',col:'#1f9e8b',sub:tgtOreHr!=null?fmt2(tgtOreHr)+' t/hr':null},
+   {label:'Prod. Waste Target',val:tgtWst!=null?fmt2(tgtWst)+' t':'—',col:'#d08a1f',sub:tgtWstHr!=null?fmt2(tgtWstHr)+' t/hr':null},
+   {label:'Non-Prod. Target',val:tgtNp!=null?fmt2(tgtNp)+' t':'—',col:'#9aa0ab',sub:tgtNpHr!=null?fmt2(tgtNpHr)+' t/hr':null}
+  ].forEach(({label,val,col,sub})=>{
+    h+=`<div style="background:#f4f6fa;border:1px solid #dde1e8;border-radius:8px;padding:10px 18px;min-width:140px">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px">${label}</div>
+      <div style="font-size:22px;font-weight:700;color:${col}">${val}</div>
+      ${sub?`<div style="font-size:11px;color:var(--muted);margin-top:2px">${sub}</div>`:''}
+    </div>`;
+  });
+  h+=`</div>`;
+
+  // --- Per-pit plan tonnes (from appendix plan data) ---
+  const apxPlan=(SD().meta&&SD().meta.appendix&&SD().meta.appendix.plan)||[];
+  if(apxPlan.length){
+    h+=`<h4 style="margin:10px 0 6px;font-size:14px;color:#344">Plan Tonnes by Pit (this shift)</h4>`;
+    h+=`<table class="lanetab" style="margin-bottom:14px"><thead><tr>`;
+    h+=`<th style="text-align:left">Pit</th><th style="text-align:right">Prod. Ore</th><th style="text-align:right">Prod. Waste</th><th style="text-align:right">Prod. Total</th><th style="text-align:right">Non-prod Ore</th><th style="text-align:right">Non-prod Waste</th><th style="text-align:right">Shift Total</th>`;
+    h+=`</tr></thead><tbody>`;
+    let sumPOre=0,sumPWst=0,sumNPOre=0,sumNPWst=0;
+    apxPlan.forEach(x=>{
+      const pProd=(x.POre||0)+(x.PWst||0); const pAll=pProd+(x.NPOre||0)+(x.NPWst||0);
+      sumPOre+=x.POre||0; sumPWst+=x.PWst||0; sumNPOre+=x.NPOre||0; sumNPWst+=x.NPWst||0;
+      h+=`<tr>
+        <td style="font-weight:600">${x.pit}</td>
+        <td style="text-align:right">${fmt2(x.POre)}</td>
+        <td style="text-align:right">${fmt2(x.PWst)}</td>
+        <td style="text-align:right;font-weight:600">${fmt2(pProd)}</td>
+        <td style="text-align:right;color:var(--muted)">${fmt2(x.NPOre)}</td>
+        <td style="text-align:right;color:var(--muted)">${fmt2(x.NPWst)}</td>
+        <td style="text-align:right;font-weight:600">${fmt2(pAll)}</td>
+      </tr>`;
+    });
+    if(apxPlan.length>1){
+      const tProd=sumPOre+sumPWst; const tAll=tProd+sumNPOre+sumNPWst;
+      h+=`<tr style="border-top:2px solid #ccc;font-weight:700">
+        <td>All Pits</td>
+        <td style="text-align:right">${fmt2(sumPOre)}</td>
+        <td style="text-align:right">${fmt2(sumPWst)}</td>
+        <td style="text-align:right">${fmt2(tProd)}</td>
+        <td style="text-align:right;color:var(--muted)">${fmt2(sumNPOre)}</td>
+        <td style="text-align:right;color:var(--muted)">${fmt2(sumNPWst)}</td>
+        <td style="text-align:right">${fmt2(tAll)}</td>
+      </tr>`;
+    }
+    h+=`</tbody></table>`;
+    h+=`<div class="foot" style="margin-bottom:12px">Plan tonnes sourced from the shift budget (same data as Shift Overview cumulative &amp; hourly target lines). Prod. Total = Ore + Waste productive tonnes. <button class="tlbtn" onclick="setTab('overview')">Shift Overview</button></div>`;
+  }
+
+  h+=`<h4 style="margin:10px 0 6px;font-size:14px;color:#344">Downtime Root-Cause Log — Reporting Checklist</h4>`;
+  h+=`</div>`;
+
+  el.innerHTML=h;
+}
+const TABS=[['overview','Shift Overview',0],['recommendations','Last 14 Shifts',0],['playbook','Playbook',0],['matplace','Material Placement',0],['balance','Truck / Shovel Balance',0],['shovel2','Shovel Waterfall',0],['loading','Loading drill-down',1],['shovprod','Shovel Productivity',1],['trucks','Truck Waterfall',0],['haulage','Haulage drill-down',1],['truckflow','Truck Flow',1],['delays','Delays & Standby',1],['truckprod','Truck Productivity',1],['hourlyperf','Hourly Production',0],['lube','Fuel and Lube',0],['shiftstats','Shift Stats',0],['trends','Cross-Shift Trends',0],['appendix','Appendix',0],['sandbox','Sandbox',0]];
 let tab='overview';
+let sbAuto=true;   // sidebar auto-hides (slides off-screen) by default; hover the left edge to reveal
+function applySidebar(){document.body.classList.toggle('sb-auto',sbAuto);if(!sbAuto)document.body.classList.remove('sb-show');posHideTab();}
+function posHideTab(){const sn=document.getElementById('sidenav'),b=document.getElementById('sbArrow');if(sn&&b&&!sbAuto)b.style.left=Math.round(sn.getBoundingClientRect().right)+'px';}
+function toggleSidebar(){sbAuto=!sbAuto;applySidebar();saveState();}
+function initSidebarHover(){
+  const sn=document.getElementById('sidenav');
+  const show=()=>{if(sbAuto)document.body.classList.add('sb-show');};
+  const hide=()=>document.body.classList.remove('sb-show');
+  ['sbEdge'].forEach(id=>{const e=document.getElementById(id);if(e)e.addEventListener('mouseenter',show);});
+  if(sn){sn.addEventListener('mouseenter',show);sn.addEventListener('mouseleave',hide);}
+}
 function renderSidenav(){const n=document.getElementById('sidenav');
-  n.querySelectorAll('button').forEach(b=>b.remove());
+  n.querySelectorAll(':scope > button').forEach(b=>b.remove());
   TABS.forEach(([id,lbl,lvl])=>{const b=document.createElement('button');b.textContent=lbl;let cls=lvl?'sub':'';if(id===tab)cls+=(cls?' ':'')+'on';if(cls)b.className=cls;b.onclick=()=>setTab(id);n.appendChild(b);});}
-function setTab(t){tab=t;document.querySelectorAll('.page').forEach(p=>{p.hidden=(p.id!=='pg-'+t);});renderSidenav();renderTab();saveState();}
+function setTab(t){tab=t;document.querySelectorAll('.page').forEach(p=>{p.hidden=(p.id!=='pg-'+t);});renderSidenav();renderTab();saveState();if(sbAuto)document.body.classList.remove('sb-show');}
 function pageStep(dir){const idx=TABS.findIndex(t=>t[0]===tab),n=idx+dir; if(n>=0&&n<TABS.length)setTab(TABS[n][0]);}
 function renderPageNav(){const idx=TABS.findIndex(t=>t[0]===tab);
   const pv=document.getElementById('pgPrev'),nx=document.getElementById('pgNext'),lb=document.getElementById('pgLabel');
   if(pv)pv.disabled=idx<=0; if(nx)nx.disabled=idx>=TABS.length-1;
   if(lb)lb.textContent=(idx+1)+' / '+TABS.length+' · '+(TABS[idx]?TABS[idx][1]:'');}
-function setSubs(){['wfsub','shovsub','hcsub','ansub','owsub','lanesub','dhsub','dlsub','tlsub','avsub','avsub2','dtlsub','lhsub','lusub','hitsub','shov2sub','dssub','hpsub','spsub','tpsub','sssub','tfsub'].forEach(id=>{const e=document.getElementById(id);if(e)e.textContent='('+view+')';});}
+function setSubs(){['wfsub','shovsub','hcsub','ansub','owsub','lanesub','dhsub','dlsub','tlsub','avsub','avsub2','dtlsub','lhsub','lusub','hitsub','shov2sub','dssub','hpsub','spsub','tpsub','sssub','tfsub','recsub','playsub'].forEach(id=>{const e=document.getElementById(id);if(e)e.textContent='('+view+')';});}
 function renderTab(){
   setSubs(); renderPageNav();
   if(tab==='overview'){try{renderOverview();}catch(e){console.error(e);}}
+  else if(tab==='recommendations'){try{renderRecommendations();}catch(e){console.error(e);}}
+  else if(tab==='playbook'){try{renderPlaybook();}catch(e){console.error(e);}}
   else if(tab==='trends'){try{renderTrends();}catch(e){console.error(e);}}
   else if(tab==='balance'){renderCards();}
   else if(tab==='sandbox'){try{renderSandbox();}catch(e){console.error(e);}}
@@ -4059,6 +5057,7 @@ function renderTab(){
   else if(tab==='shovel2'){renderShovWF2();}
   else if(tab==='loading'){renderLoading();}
   else if(tab==='haulage'){renderLanes();}
+  else if(tab==='matplace'){try{renderMatPlace();}catch(e){console.error(e);}}
   else if(tab==='truckflow'){try{renderTruckFlow();}catch(e){console.error(e);}}
   else if(tab==='lube'){try{renderLube();}catch(e){console.error(e);}}
   else if(tab==='delays'){try{renderDelays();}catch(e){console.error(e);}}
@@ -4071,7 +5070,7 @@ function renderTab(){
 function renderAll(){
   renderToggle();
   const m=SD().meta;
-  document.getElementById('sub').textContent=m.shift+'  ·  view: '+view;
+  document.getElementById('ovUpdated').textContent='Last updated '+DATA.meta.generated;
   document.getElementById('gen').textContent='Generated '+DATA.meta.generated+
     '  ·  payload target '+DATA.meta.payloadTarget+'t  ·  full-leg fraction '+m.fullLegFrac+
     ' (loaded '+m.vFull+' km/h, empty '+m.vEmpty+' km/h)';
@@ -4080,9 +5079,26 @@ function renderAll(){
 }
 loadState();
 renderAll();
-window.addEventListener('hashchange',()=>{loadState();renderAll();});   // back/forward + edited deep-links
+applySidebar();
+initSidebarHover();
+function applyScreenScale(){
+  const w=window.innerWidth,h=window.innerHeight;
+  // Scale factor: 1.0 at 1920×1080, clamped to [0.75, 1.30]
+  const scale=Math.min(Math.max(Math.min(w/1920,h/1080),0.75),1.30);
+  const fs=Math.round(13*scale)+'px';
+  const ch=Math.round(Math.max(160,Math.min(480,h*0.22)))+'px';
+  const cht=Math.round(Math.max(180,Math.min(540,h*0.26)))+'px';
+  const r=document.documentElement.style;
+  r.setProperty('--fs-body',fs);
+  r.setProperty('--chart-h',ch);
+  r.setProperty('--chart-h-tall',cht);
+  Object.values(CHARTS).forEach(c=>{try{if(c&&c.resize)c.resize();}catch(e){}});
+}
+applyScreenScale();
+window.addEventListener('hashchange',()=>{loadState();renderAll();applySidebar();});   // back/forward + edited deep-links
+window.addEventListener('resize',()=>{posHideTab();applyScreenScale();});   // keep the hide tab glued to the sidebar's right edge
 </script></body></html>'''
-HTML=HTML.replace('__DATA__', json.dumps(out))
+HTML=HTML.replace('_REC_WINDOW_SHIFTS', str(_REC_WINDOW_SHIFTS))
 # Inline Chart.js for a fully self-contained, offline / no-CDN file. Falls back to CDN if the lib is absent.
 try:
     _cjs=open(f'{BASE}/lib_chartjs.js',encoding='utf-8').read()
@@ -4092,5 +5108,55 @@ except FileNotFoundError:
     chart_tag='<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>'
     _mode='CDN fallback (lib_chartjs.js not found)'
 HTML=HTML.replace('__CHARTJS__', chart_tag)
-open(f'{BASE}/Haulage_Dashboard.html','w',encoding='utf-8').write(HTML)
-print("HTML written: %s/Haulage_Dashboard.html (%d KB)  Chart.js: %s"%(BASE,len(HTML)//1024,_mode))
+HAULAGE_HTML=HTML.replace('__DATA__', json.dumps(out))
+
+_sql_data_decl="""let DATA = null;
+let view = 'Combined';
+let shift = null;
+const ISTAR_API_BASE = (window.ISTAR_API_BASE || '').replace(/\\/+$/,'');
+function _esc(s){return String(s||'').replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));}
+async function fetchIstarData(){
+  const qs=new URLSearchParams(location.search||'');
+  const explicit=qs.get('dataUrl');
+  const endpoint=explicit || (ISTAR_API_BASE ? (ISTAR_API_BASE+'/api/dashboard-data') : '/api/dashboard-data');
+  const res=await fetch(endpoint,{cache:'no-store'});
+  if(!res.ok)throw new Error('API '+res.status+' from '+endpoint);
+  return await res.json();
+}
+function showLoadError(err){
+  document.querySelectorAll('.page').forEach(p=>{p.hidden=true;});
+  const msg=err&&err.message?err.message:String(err||'unknown error');
+  document.getElementById('gen').innerHTML=
+    '<div class=\"card\" style=\"margin:16px;max-width:820px\">'+
+    '<h3>iSTAR dashboard failed to load SQL backend data</h3>'+
+    '<div class=\"foot\">Set <code>ISTAR_API_BASE</code> (or <code>?dataUrl=...</code>) and ensure your API returns the existing dashboard JSON contract.</div>'+
+    '<pre style=\"white-space:pre-wrap;background:#f6f7f9;border:1px solid #e3e6ec;border-radius:8px;padding:10px\">'+_esc(msg)+'</pre></div>';
+}
+async function initIstarDashboard(){
+  try{
+    DATA=await fetchIstarData();
+    shift=DATA.defaultShift || ((DATA.shifts&&DATA.shifts[0])?DATA.shifts[0].id:null);
+    if(!shift || !DATA.byShift || !DATA.byShift[shift]) throw new Error('Payload missing defaultShift/byShift data.');
+    loadState();
+    renderAll();
+    applySidebar();
+    initSidebarHover();
+  }catch(e){
+    console.error(e);
+    showLoadError(e);
+  }
+}"""
+ISTAR_HTML=HTML.replace("const DATA = __DATA__;\nlet view = 'Combined';\nlet shift = DATA.defaultShift;", _sql_data_decl)
+ISTAR_HTML=ISTAR_HTML.replace("loadState();\nrenderAll();\napplySidebar();\ninitSidebarHover();", "initIstarDashboard();")
+ISTAR_HTML=ISTAR_HTML.replace("window.addEventListener('hashchange',()=>{loadState();renderAll();applySidebar();});",
+                              "window.addEventListener('hashchange',()=>{if(!DATA)return;loadState();renderAll();applySidebar();});")
+# Atomic write: write to a temp file first, then replace — prevents the browser from
+# reading a half-written file during the 5-minute refresh cycle.
+_out=f'{BASE}/Haulage_Dashboard.html'; _tmp=_out+'.tmp'
+open(_tmp,'w',encoding='utf-8').write(HAULAGE_HTML)
+os.replace(_tmp,_out)
+print("HTML written: %s/Haulage_Dashboard.html (%d KB)  Chart.js: %s"%(BASE,len(HAULAGE_HTML)//1024,_mode))
+_istar=f'{BASE}/iSTAR_dashboard.html'; _istar_tmp=_istar+'.tmp'
+open(_istar_tmp,'w',encoding='utf-8').write(ISTAR_HTML)
+os.replace(_istar_tmp,_istar)
+print("HTML written: %s/iSTAR_dashboard.html (%d KB)  data: SQL/API runtime"%(BASE,len(ISTAR_HTML)//1024))

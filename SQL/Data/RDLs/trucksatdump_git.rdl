@@ -112,7 +112,7 @@ SELECT
     [TrucksAtDump],
     [TrucksInQueue],
     [QStatus]
-FROM [ASEOperational].[CommonASE].[TrucksAtDump]
+FROM [CommonASE].[TrucksAtDump]
 WHERE ShiftId BETWEEN @StartShift AND @EndShift
 ORDER BY ShiftId, DumpLocation, LogTime;
         </CommandText>
