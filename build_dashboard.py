@@ -64,7 +64,7 @@ MASTER_TRACKING_ACTIONS_CSV_CANDIDATES=[
     f'{BASE}/master_tracking_actions.csv',
 ]
 MASTER_TRACKING_ACTION_FIELDS=[
-    'intervalId','assetId','deviation','corrective','owner',
+    'mine','intervalId','assetId','deviation','corrective','owner',
     'support','slaDl','status','rootCause','impactVal','impactUnit'
 ]
 
@@ -5066,7 +5066,7 @@ function renderPlaybook(){
   h+=`<div id="pb-s3-modal" style="display:none;position:fixed;inset:0;background:rgba(33,39,49,.45);z-index:9999;padding:24px;overflow:auto">`;
   h+=`<div style="max-width:980px;margin:30px auto;background:#fff;border-radius:12px;border:1px solid #d9dfe8;box-shadow:0 18px 46px rgba(18,28,45,.18);overflow:hidden">`;
   h+=`<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid #e7ebf1;background:#f8f9fb">
-    <div><div style="font-size:16px;font-weight:700;color:#2b2f36">Log New Action Item</div><div style="font-size:12px;color:#6d7683">Capture the full master-tracking record, then save it into the action register.</div></div>
+    <div><div id="pb-s3-modal-title" style="font-size:16px;font-weight:700;color:#2b2f36">Log New Action Item</div><div id="pb-s3-modal-subtitle" style="font-size:12px;color:#6d7683">Capture the full master-tracking record, then save it into the action register.</div></div>
     <button type="button" class="tlbtn" onclick="pbS3CloseModal()" style="font-size:20px;line-height:1;color:#667085;background:transparent;border:none;cursor:pointer;padding:0 2px">&times;</button>
   </div>`;
   h+=`<form id="pb-s3-form" onsubmit="pbS3Submit(event)" style="padding:16px 18px;background:#fff">`;
@@ -5081,7 +5081,8 @@ function renderPlaybook(){
   h+=`<th style="text-align:left;padding:7px 10px;font-weight:600;color:#6d7683">Purpose</th>`;
   h+=`</tr></thead><tbody>`;
   const refRows=[
-    ["Context","Interval ID","Dropdown (06:00–08:00, 08:00–10:00, etc.)","Isolates when the bottleneck occurred."],
+    ["Context","Mine","Dropdown (MRM, JPM)","Identifies the mine pit where the action applies."],
+    ["","Interval ID","Dropdown (06:00–08:00, 08:00–10:00, etc.)","Isolates when the bottleneck occurred."],
     ["","Asset / Area ID","Text / Dropdown (e.g., SHV-02, CRUSH-01)","Pinpoints the exact piece of equipment or pit zone."],
     ["Activity","Deviation Observed","Short Text","The problem statement (e.g., Truck queue exceeds 15 mins)."],
     ["","Corrective Action","Imperative Sentence","The exact directive issued to fix the variance."],
@@ -5103,7 +5104,12 @@ function renderPlaybook(){
   });
   h+=`</tbody></table></div>`;
 
-  h+=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">`;
+  h+=`<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">`;
+  h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">Mine <span style="font-weight:400;color:#888">(Context)</span>
+    <select name="mine" required style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px;background:#fff">
+      <option value="">— select —</option>
+      <option>MRM</option><option>JPM</option>
+    </select></label>`;
   h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">Interval ID <span style="font-weight:400;color:#888">(Context)</span>
     <select name="intervalId" required style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px;background:#fff">
       <option value="">— select —</option>
@@ -5162,7 +5168,7 @@ function renderPlaybook(){
 
   h+=`<div style="display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap">`;
   h+=`<button type="button" class="tlbtn" onclick="pbS3CloseModal()" style="padding:8px 18px;font-size:13px;background:#fff;color:#5b6573;border:1px solid #cfd4dd;border-radius:6px;cursor:pointer">Cancel</button>`;
-  h+=`<button type="submit" class="tlbtn" style="padding:8px 22px;font-size:13px;background:#2f7a44;color:#fff;border:none;border-radius:6px;cursor:pointer">&#43; Add Action Item</button>`;
+  h+=`<button id="pb-s3-submit-btn" type="submit" class="tlbtn" style="padding:8px 22px;font-size:13px;background:#2f7a44;color:#fff;border:none;border-radius:6px;cursor:pointer">&#43; Add Action Item</button>`;
   h+=`</div>`;
   h+=`</form></div></div>`;
 
@@ -5218,6 +5224,12 @@ function initPbS3ActionRegister(){
     return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;color:#fff;background:'+(m[s]||'#888')+'">'+esc(s||'Unknown')+'</span>';
   }
 
+  function mineBadge(m){
+    if(!m) return '';
+    const c=m==='MRM'?'#1d6fa4':m==='JPM'?'#7b1fa2':'#555';
+    return '<span style="display:inline-block;padding:1px 7px;border-radius:8px;font-size:11px;font-weight:700;color:#fff;background:'+c+';margin-right:4px">'+esc(m)+'</span>';
+  }
+
   function summaryText(item){
     return [
       item.deviation || 'No deviation recorded',
@@ -5225,6 +5237,15 @@ function initPbS3ActionRegister(){
       item.assetId ? ('Asset: '+item.assetId) : '',
       item.intervalId ? ('Window: '+item.intervalId) : ''
     ].filter(Boolean).join(' · ');
+  }
+
+  function setFormValues(f, item){
+    CSV_FIELDS.forEach(function(key){
+      const el=f.elements[key];
+      if(!el) return;
+      if(el.tagName==='SELECT') el.value=item[key]||'';
+      else el.value=item[key]||'';
+    });
   }
 
   function renderList(){
@@ -5236,21 +5257,23 @@ function initPbS3ActionRegister(){
     }
     let t='<h4 style="margin:0 0 8px;font-size:14px;color:#2b2f36">Section 3 Action Register ('+window._pbS3Items.length+')</h4>';
     t+='<div style="overflow-x:auto"><table class="lanetab" style="width:100%"><thead><tr>'
-      +'<th>#</th><th>Action Summary</th><th>Ownership</th><th>Status</th><th>SLA Deadline</th><th></th>'
+      +'<th>#</th><th>Mine</th><th>Action Summary</th><th>Ownership</th><th>Status</th><th>SLA Deadline</th><th></th>'
       +'</tr></thead><tbody>';
     window._pbS3Items.forEach(function(item,i){
       const ownerBlock='<div style="font-weight:600;white-space:nowrap">'+esc(item.owner||'—')+'</div>'
         +(item.support?'<div style="font-size:12px;color:var(--muted)">Support: '+esc(item.support)+'</div>':'');
-      t+='<tr>'
+      t+='<tr style="cursor:pointer" onclick="pbS3ViewItem('+i+')" title="Click to view / edit">'
         +'<td style="color:var(--muted)">'+(i+1)+'</td>'
+        +'<td>'+mineBadge(item.mine)+'</td>'
         +'<td><div style="font-weight:600;color:#2b2f36;margin-bottom:2px">'+esc(item.assetId||'Unassigned asset')+'</div><div style="font-size:12px;line-height:1.45">'+esc(summaryText(item))+'</div><div style="font-size:11px;color:var(--muted);margin-top:4px">Root cause: '+esc(item.rootCause||'—')+' · Impact: '+esc(item.impactVal?(item.impactVal+' '+(item.impactUnit||'')):'—')+'</div></td>'
         +'<td>'+ownerBlock+'</td>'
         +'<td>'+statusBadge(item.status)+'</td>'
         +'<td style="white-space:nowrap;font-size:12px">'+formatSla(item.slaDl)+'</td>'
-        +'<td><button type="button" class="tlbtn" style="color:#c0392b" onclick="pbS3Delete('+i+')">✕</button></td>'
+        +'<td onclick="event.stopPropagation()"><button type="button" class="tlbtn" style="color:#c0392b" onclick="pbS3Delete('+i+')">✕</button></td>'
         +'</tr>';
     });
     t+='</tbody></table></div>';
+    t+='<div style="margin-top:6px;font-size:11px;color:var(--muted)">Click a row to view or edit that action.</div>';
     el.innerHTML=t;
   }
 
@@ -5261,14 +5284,39 @@ function initPbS3ActionRegister(){
 
   window._pbS3Init=true;
   window._pbS3Items=loadItems();
+  window._pbS3EditIdx=-1;   // -1 = new item, >=0 = editing existing
+
+  function setModalMode(editIdx){
+    window._pbS3EditIdx=editIdx;
+    const isEdit=editIdx>=0;
+    const titleEl=document.getElementById('pb-s3-modal-title');
+    const subtitleEl=document.getElementById('pb-s3-modal-subtitle');
+    const submitBtn=document.getElementById('pb-s3-submit-btn');
+    if(titleEl) titleEl.textContent=isEdit?'View / Edit Action Item':'Log New Action Item';
+    if(subtitleEl) subtitleEl.textContent=isEdit?'Update any field below, then save your changes.':'Capture the full master-tracking record, then save it into the action register.';
+    if(submitBtn) submitBtn.textContent=isEdit?'✓ Save Changes':'+ Add Action Item';
+  }
 
   window.pbS3OpenModal=function(){
+    setModalMode(-1);
+    const f=document.getElementById('pb-s3-form');
+    if(f) f.reset();
     const modal=document.getElementById('pb-s3-modal');
     if(modal) modal.style.display='block';
   };
   window.pbS3CloseModal=function(){
     const modal=document.getElementById('pb-s3-modal');
     if(modal) modal.style.display='none';
+    window._pbS3EditIdx=-1;
+  };
+  window.pbS3ViewItem=function(i){
+    const item=window._pbS3Items[i];
+    if(!item) return;
+    setModalMode(i);
+    const f=document.getElementById('pb-s3-form');
+    if(f) setFormValues(f, item);
+    const modal=document.getElementById('pb-s3-modal');
+    if(modal) modal.style.display='block';
   };
   window.pbS3ExportCsv=function(){
     const rows=[CSV_FIELDS.join(',')].concat(window._pbS3Items.map(function(item){
@@ -5289,7 +5337,8 @@ function initPbS3ActionRegister(){
     e.preventDefault();
     const f=e.target;
     const fd=new FormData(f);
-    window._pbS3Items.push(normalizeItem({
+    const newItem=normalizeItem({
+      mine:       fd.get('mine'),
       intervalId: fd.get('intervalId'),
       assetId:    fd.get('assetId'),
       deviation:  fd.get('deviation'),
@@ -5301,7 +5350,12 @@ function initPbS3ActionRegister(){
       rootCause:  fd.get('rootCause'),
       impactVal:  fd.get('impactVal'),
       impactUnit: fd.get('impactUnit'),
-    }));
+    });
+    if(window._pbS3EditIdx>=0){
+      window._pbS3Items[window._pbS3EditIdx]=newItem;
+    } else {
+      window._pbS3Items.push(newItem);
+    }
     saveItems();
     f.reset();
     const msg=document.getElementById('pb-s3-msg');
