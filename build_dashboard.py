@@ -5109,6 +5109,38 @@ function renderPlaybook(){
   </div>`;
   h+=`<form id="pb-s3-form" onsubmit="pbS3Submit(event)" style="padding:16px 18px;background:#fff">`;
 
+  /* ---- field-reference guide ---- */
+  h+=`<div style="margin-bottom:16px;overflow-x:auto">`;
+  h+=`<table style="width:100%;border-collapse:collapse;font-size:12px;color:#2b2f36">`;
+  h+=`<thead><tr style="border-bottom:2px solid #e7ebf1;background:#f8f9fb">`;
+  h+=`<th style="text-align:left;padding:7px 10px;font-weight:600;color:#6d7683;white-space:nowrap">Field Category</th>`;
+  h+=`<th style="text-align:left;padding:7px 10px;font-weight:600;color:#6d7683;white-space:nowrap">Column Name</th>`;
+  h+=`<th style="text-align:left;padding:7px 10px;font-weight:600;color:#6d7683;white-space:nowrap">Data Type / Validation</th>`;
+  h+=`<th style="text-align:left;padding:7px 10px;font-weight:600;color:#6d7683">Purpose</th>`;
+  h+=`</tr></thead><tbody>`;
+  const refRows=[
+    ["Context","Interval ID","Dropdown (06:00–08:00, 08:00–10:00, etc.)","Isolates when the bottleneck occurred."],
+    ["","Asset / Area ID","Text / Dropdown (e.g., SHV-02, CRUSH-01)","Pinpoints the exact piece of equipment or pit zone."],
+    ["Activity","Deviation Observed","Short Text","The problem statement (e.g., Truck queue exceeds 15 mins)."],
+    ["","Corrective Action","Imperative Sentence","The exact directive issued to fix the variance."],
+    ["Ownership","Action Owner","Single Name / Role Pin","The one specific person accountable for execution."],
+    ["","Support Resource","Text / Dropdown (Optional)","Secondary teams called to help (e.g., Maintenance, Dozers)."],
+    ["Outcome","SLA Deadline","Timestamp (Interval End + 30 Mins)","The hard cutoff time before automatic escalation."],
+    ["","Resolution Status","Dropdown (Open, In-Progress, Closed, Escalated)","Real-time status of the fix."],
+    ["","Root-Cause Code","Dropdown (Standardised list)","Used for end-of-month engineering audits."],
+    ["","Final Production Impact","Numeric (Tons, Meters, or Hours)","Quantifiable result of the intervention."],
+  ];
+  refRows.forEach(([cat,col,dtype,purpose],i)=>{
+    const bg=i%2===0?'#ffffff':'#f8f9fb';
+    const catCell=cat?`<td style="padding:6px 10px;vertical-align:top;font-weight:700;white-space:nowrap">${cat}</td>`:`<td style="padding:6px 10px"></td>`;
+    h+=`<tr style="border-bottom:1px solid #e7ebf1;background:${bg}">${catCell}`;
+    h+=`<td style="padding:6px 10px;vertical-align:top;font-weight:700;white-space:nowrap">${col}</td>`;
+    h+=`<td style="padding:6px 10px;vertical-align:top;color:#1d6fa4;white-space:nowrap">${dtype}</td>`;
+    h+=`<td style="padding:6px 10px;vertical-align:top;color:#c0550c">${purpose}</td>`;
+    h+=`</tr>`;
+  });
+  h+=`</tbody></table></div>`;
+
   h+=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">`;
   h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">Interval ID <span style="font-weight:400;color:#888">(Context)</span>
     <select name="intervalId" required style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px;background:#fff">
