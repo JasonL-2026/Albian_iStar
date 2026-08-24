@@ -56,6 +56,11 @@ _WF_PRIO_META_SHOVELS={
 }
 _WF_PRIO_THRESH=7500  # minimum |delta_t| to include in summary
 _REC_WINDOW_SHIFTS=14
+MASTER_TRACKING_ACTIONS_CSV=f'{BASE}/master_tracking_actions.csv'
+MASTER_TRACKING_ACTION_FIELDS=[
+    'intervalId','assetId','deviation','corrective','owner',
+    'support','slaDl','status','rootCause','impactVal','impactUnit'
+]
 
 def compute_wf_priority_summary(wf, swf=None, shift_count=1):
     """Build a ranked waterfall-gap summary for the Last 14 Shifts tab.
@@ -126,6 +131,16 @@ def merge_avail_decomp(avails):
                   'reasons':[],
                   'num':num,'den':den,'budNum':budNum,'budDen':budDen}
     return out
+
+def load_master_tracking_actions():
+    items=[]
+    if os.path.exists(MASTER_TRACKING_ACTIONS_CSV):
+        with open(MASTER_TRACKING_ACTIONS_CSV, encoding='utf-8-sig', newline='') as f:
+            for row in csv.DictReader(f):
+                if not any((row.get(k) or '').strip() for k in MASTER_TRACKING_ACTION_FIELDS):
+                    continue
+                items.append({k:(row.get(k,'') or '').strip() for k in MASTER_TRACKING_ACTION_FIELDS})
+    return items
 
 def merge_wf_period(wfs):
     items=[wf for wf in wfs if wf]
@@ -5065,11 +5080,23 @@ function renderPlaybook(){
   });
   h+=`</tbody></table></div>`;
 
-  /* ---- action item entry form ---- */
-  h+=`<h4 style="margin:0 0 8px;font-size:15px;color:#2b2f36">&#43; Log New Action Item</h4>`;
-  h+=`<form id="pb-s3-form" onsubmit="pbS3Submit(event)" style="background:#f8f9fb;border:1px solid #dde1e8;border-radius:10px;padding:16px 18px">`;
+  /* ---- action controls ---- */
+  h+=`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">`;
+  h+=`<button type="button" class="tlbtn" onclick="pbS3OpenModal()" style="padding:8px 18px;font-size:13px;background:#2f7a44;color:#fff;border:none;border-radius:6px;cursor:pointer">&#43; Log New Action Item</button>`;
+  h+=`<button type="button" class="tlbtn" onclick="pbS3ExportCsv()" style="padding:8px 18px;font-size:13px;background:#fff;color:#2f7a44;border:1px solid #2f7a44;border-radius:6px;cursor:pointer">Export Actions CSV</button>`;
+  h+=`<span id="pb-s3-msg" style="font-size:12px;color:#2f7a44;display:none">&#10003; Action item logged.</span>`;
+  h+=`</div>`;
+  h+=`<div style="margin:0 0 10px;font-size:13px;color:var(--muted)">Section 3 keeps a running register of previously entered actions, with a concise summary, owner and current status.</div>`;
 
-  /* row 1: Context */
+  /* ---- popup entry form ---- */
+  h+=`<div id="pb-s3-modal" style="display:none;position:fixed;inset:0;background:rgba(33,39,49,.45);z-index:9999;padding:24px;overflow:auto">`;
+  h+=`<div style="max-width:980px;margin:30px auto;background:#fff;border-radius:12px;border:1px solid #d9dfe8;box-shadow:0 18px 46px rgba(18,28,45,.18);overflow:hidden">`;
+  h+=`<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid #e7ebf1;background:#f8f9fb">
+    <div><div style="font-size:16px;font-weight:700;color:#2b2f36">Log New Action Item</div><div style="font-size:12px;color:#6d7683">Capture the full master-tracking record, then save it into the action register.</div></div>
+    <button type="button" class="tlbtn" onclick="pbS3CloseModal()" style="font-size:20px;line-height:1;color:#667085;background:transparent;border:none;cursor:pointer;padding:0 2px">&times;</button>
+  </div>`;
+  h+=`<form id="pb-s3-form" onsubmit="pbS3Submit(event)" style="padding:16px 18px;background:#fff">`;
+
   h+=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">`;
   h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">Interval ID <span style="font-weight:400;color:#888">(Context)</span>
     <select name="intervalId" required style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px;background:#fff">
@@ -5084,7 +5111,6 @@ function renderPlaybook(){
   </label>`;
   h+=`</div>`;
 
-  /* row 2: Activity */
   h+=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">`;
   h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">Deviation Observed <span style="font-weight:400;color:#888">(Activity)</span>
     <input type="text" name="deviation" placeholder="e.g. Truck queue exceeds 15 mins" required style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px">
@@ -5094,7 +5120,6 @@ function renderPlaybook(){
   </label>`;
   h+=`</div>`;
 
-  /* row 3: Ownership */
   h+=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">`;
   h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">Action Owner <span style="font-weight:400;color:#888">(Ownership)</span>
     <input type="text" name="owner" placeholder="Full name or role" required style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px">
@@ -5104,7 +5129,6 @@ function renderPlaybook(){
   </label>`;
   h+=`</div>`;
 
-  /* row 4: Outcome */
   h+=`<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:16px">`;
   h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">SLA Deadline <span style="font-weight:400;color:#888">(Outcome)</span>
     <input type="datetime-local" name="slaDl" required style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px">
@@ -5130,15 +5154,14 @@ function renderPlaybook(){
     </div></label>`;
   h+=`</div>`;
 
-  /* submit */
-  h+=`<div style="display:flex;align-items:center;gap:12px">`;
+  h+=`<div style="display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap">`;
+  h+=`<button type="button" class="tlbtn" onclick="pbS3CloseModal()" style="padding:8px 18px;font-size:13px;background:#fff;color:#5b6573;border:1px solid #cfd4dd;border-radius:6px;cursor:pointer">Cancel</button>`;
   h+=`<button type="submit" class="tlbtn" style="padding:8px 22px;font-size:13px;background:#2f7a44;color:#fff;border:none;border-radius:6px;cursor:pointer">&#43; Add Action Item</button>`;
-  h+=`<span id="pb-s3-msg" style="font-size:12px;color:#2f7a44;display:none">&#10003; Action item logged.</span>`;
   h+=`</div>`;
-  h+=`</form>`;
+  h+=`</form></div></div>`;
 
-  /* ---- logged items table ---- */
-  h+=`<div id="pb-s3-list" style="margin-top:18px"></div>`;
+  /* ---- logged items summary ---- */
+  h+=`<div id="pb-s3-list" style="margin-top:10px"></div>`;
   h+=`</div>`;
 
   /* ---- inline JS for form logic ---- */
@@ -5146,48 +5169,116 @@ function renderPlaybook(){
   (function(){
     if(window._pbS3Init) return;
     window._pbS3Init=true;
-    window._pbS3Items=window._pbS3Items||[];
+    const STORAGE_KEY='albianPbS3ItemsV1';
+    const CSV_FIELDS=__MASTER_TRACKING_ACTION_FIELDS__;
+    window._pbS3SeedItems=Array.isArray(__MASTER_TRACKING_ACTIONS__)?__MASTER_TRACKING_ACTIONS__:[];
+
+    function esc(v){
+      return String(v==null?'':v).replace(/[&<>"']/g,function(ch){
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];
+      });
+    }
+
+    function csvEsc(v){
+      return '"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+    }
+
+    function normalizeItem(item){
+      const out={};
+      CSV_FIELDS.forEach(function(key){ out[key]=String(item&&item[key]!=null?item[key]:'').trim(); });
+      return out;
+    }
+
+    function saveItems(){
+      try{localStorage.setItem(STORAGE_KEY, JSON.stringify(window._pbS3Items));}catch(e){}
+    }
+
+    function loadItems(){
+      try{
+        const raw=localStorage.getItem(STORAGE_KEY);
+        if(raw!=null){
+          const parsed=JSON.parse(raw);
+          if(Array.isArray(parsed)) return parsed.map(normalizeItem);
+        }
+      }catch(e){}
+      return window._pbS3SeedItems.map(normalizeItem);
+    }
+
+    function formatSla(v){
+      return esc(String(v||'').replace('T',' ')) || '—';
+    }
 
     function statusBadge(s){
       const m={Open:'#e23b32','In-Progress':'#b85c00',Closed:'#2f7a44',Escalated:'#7b1fa2'};
-      return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;color:#fff;background:'+(m[s]||'#888')+'">'+s+'</span>';
+      return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;color:#fff;background:'+(m[s]||'#888')+'">'+esc(s||'Unknown')+'</span>';
+    }
+
+    function summaryText(item){
+      return [
+        item.deviation || 'No deviation recorded',
+        item.corrective ? ('Action: '+item.corrective) : '',
+        item.assetId ? ('Asset: '+item.assetId) : '',
+        item.intervalId ? ('Window: '+item.intervalId) : ''
+      ].filter(Boolean).join(' · ');
     }
 
     function renderList(){
       const el=document.getElementById('pb-s3-list');
       if(!el) return;
-      if(!window._pbS3Items.length){el.innerHTML='';return;}
-      let t='<h4 style="margin:0 0 8px;font-size:14px;color:#2b2f36">Logged Action Items ('+window._pbS3Items.length+')</h4>';
+      if(!window._pbS3Items.length){
+        el.innerHTML='<div style="padding:14px 16px;border:1px dashed #cfd6e1;border-radius:10px;background:#fbfcfe;color:#6b7280">No action items logged yet. Use <b>Log New Action Item</b> to create the first record.</div>';
+        return;
+      }
+      let t='<h4 style="margin:0 0 8px;font-size:14px;color:#2b2f36">Section 3 Action Register ('+window._pbS3Items.length+')</h4>';
       t+='<div style="overflow-x:auto"><table class="lanetab" style="width:100%"><thead><tr>'
-        +'<th>#</th><th>Interval</th><th>Asset</th><th>Deviation</th><th>Corrective Action</th>'
-        +'<th>Owner</th><th>Support</th><th>SLA Deadline</th><th>Status</th><th>Root Cause</th>'
-        +'<th style="text-align:right">Impact</th><th></th>'
+        +'<th>#</th><th>Action Summary</th><th>Ownership</th><th>Status</th><th>SLA Deadline</th><th></th>'
         +'</tr></thead><tbody>';
       window._pbS3Items.forEach(function(item,i){
+        const ownerBlock='<div style="font-weight:600;white-space:nowrap">'+esc(item.owner||'—')+'</div>'
+          +(item.support?'<div style="font-size:12px;color:var(--muted)">Support: '+esc(item.support)+'</div>':'');
         t+='<tr>'
           +'<td style="color:var(--muted)">'+(i+1)+'</td>'
-          +'<td style="white-space:nowrap">'+item.intervalId+'</td>'
-          +'<td style="white-space:nowrap;font-weight:600">'+item.assetId+'</td>'
-          +'<td>'+item.deviation+'</td>'
-          +'<td>'+item.corrective+'</td>'
-          +'<td style="white-space:nowrap">'+item.owner+'</td>'
-          +'<td style="color:var(--muted)">'+( item.support||'—' )+'</td>'
-          +'<td style="white-space:nowrap;font-size:12px">'+item.slaDl+'</td>'
+          +'<td><div style="font-weight:600;color:#2b2f36;margin-bottom:2px">'+esc(item.assetId||'Unassigned asset')+'</div><div style="font-size:12px;line-height:1.45">'+esc(summaryText(item))+'</div><div style="font-size:11px;color:var(--muted);margin-top:4px">Root cause: '+esc(item.rootCause||'—')+' · Impact: '+esc(item.impactVal?(item.impactVal+' '+(item.impactUnit||'')):'—')+'</div></td>'
+          +'<td>'+ownerBlock+'</td>'
           +'<td>'+statusBadge(item.status)+'</td>'
-          +'<td style="font-size:12px">'+item.rootCause+'</td>'
-          +'<td style="text-align:right;font-weight:600;white-space:nowrap">'+(item.impactVal?item.impactVal+' '+item.impactUnit:'—')+'</td>'
-          +'<td><button class="tlbtn" style="color:#c0392b" onclick="pbS3Delete('+i+')">✕</button></td>'
+          +'<td style="white-space:nowrap;font-size:12px">'+formatSla(item.slaDl)+'</td>'
+          +'<td><button type="button" class="tlbtn" style="color:#c0392b" onclick="pbS3Delete('+i+')">✕</button></td>'
           +'</tr>';
       });
       t+='</tbody></table></div>';
       el.innerHTML=t;
     }
 
+    window._pbS3Items=loadItems();
+
+    window.pbS3OpenModal=function(){
+      const modal=document.getElementById('pb-s3-modal');
+      if(modal) modal.style.display='block';
+    };
+    window.pbS3CloseModal=function(){
+      const modal=document.getElementById('pb-s3-modal');
+      if(modal) modal.style.display='none';
+    };
+    window.pbS3ExportCsv=function(){
+      const rows=[CSV_FIELDS.join(',')].concat(window._pbS3Items.map(function(item){
+        return CSV_FIELDS.map(function(key){ return csvEsc(item[key]); }).join(',');
+      }));
+      const blob=new Blob([rows.join('\\n')],{type:'text/csv;charset=utf-8;'});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      a.href=url;
+      a.download='master_tracking_actions.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function(){URL.revokeObjectURL(url);},0);
+    };
+
     window.pbS3Submit=function(e){
       e.preventDefault();
       const f=e.target;
       const fd=new FormData(f);
-      window._pbS3Items.push({
+      window._pbS3Items.push(normalizeItem({
         intervalId: fd.get('intervalId'),
         assetId:    fd.get('assetId'),
         deviation:  fd.get('deviation'),
@@ -5199,16 +5290,23 @@ function renderPlaybook(){
         rootCause:  fd.get('rootCause'),
         impactVal:  fd.get('impactVal'),
         impactUnit: fd.get('impactUnit'),
-      });
+      }));
+      saveItems();
       f.reset();
       const msg=document.getElementById('pb-s3-msg');
       if(msg){msg.style.display='inline';setTimeout(()=>{msg.style.display='none';},2500);}
+      window.pbS3CloseModal();
       renderList();
     };
     window.pbS3Delete=function(i){
       window._pbS3Items.splice(i,1);
+      saveItems();
       renderList();
     };
+    document.addEventListener('click',function(e){
+      const modal=document.getElementById('pb-s3-modal');
+      if(modal&&e.target===modal) window.pbS3CloseModal();
+    });
     renderList();
   })();
   <\/script>`;
@@ -5292,6 +5390,8 @@ window.addEventListener('hashchange',()=>{loadState();renderAll();applySidebar()
 window.addEventListener('resize',()=>{posHideTab();applyScreenScale();});   // keep the hide tab glued to the sidebar's right edge
 </script></body></html>'''
 HTML=HTML.replace('_REC_WINDOW_SHIFTS', str(_REC_WINDOW_SHIFTS))
+HTML=HTML.replace('__MASTER_TRACKING_ACTION_FIELDS__', json.dumps(MASTER_TRACKING_ACTION_FIELDS))
+HTML=HTML.replace('__MASTER_TRACKING_ACTIONS__', json.dumps(load_master_tracking_actions()))
 # Inline Chart.js for a fully self-contained, offline / no-CDN file. Falls back to CDN if the lib is absent.
 try:
     _cjs=open(f'{BASE}/lib_chartjs.js',encoding='utf-8').read()

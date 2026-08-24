@@ -54,6 +54,8 @@ See [`Dashboard_Methodology.md`](Dashboard_Methodology.md) for a full specificat
 
 `build_dashboard.py` also generates `iSTAR_dashboard.html`, which uses the same tabs/features but loads data at runtime from an API endpoint (`/api/dashboard-data` by default) instead of embedded local JSON.
 
+Section 3 (Master Tracking Schema) now seeds its action register from `master_tracking_actions.csv`, keeps browser-side updates in local storage, and lets users export the current register back to CSV.
+
 Quick start:
 
 1. Build once:
@@ -79,6 +81,7 @@ Optional runtime settings:
 Albian_iSTAR/
 ├── build_dashboard.py          # Main builder — produces Haulage_Dashboard.html
 ├── Haulage_Dashboard.html      # Built output (open in browser)
+├── master_tracking_actions.csv # Seed/export schema rows for Section 3 action tracking
 ├── Dashboard_Methodology.md    # Specification for every KPI and calculation
 ├── CHANGELOG.md                # Version history
 ├── update_dashboard.sh         # One-click updater (Linux/macOS)

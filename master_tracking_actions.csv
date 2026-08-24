@@ -1,0 +1,4 @@
+intervalId,assetId,deviation,corrective,owner,support,slaDl,status,rootCause,impactVal,impactUnit
+06:00–08:00,SHV-02,Truck queue exceeded 15 minutes at the north shovel,Stage two additional trucks into the north shovel circuit and tighten spotting discipline,Haulage Coordinator,Dispatch,2026-08-24T08:30,In-Progress,Crusher / Dump Queue,850,Tons
+10:00–12:00,CRUSH-01,Crusher feed dropped below target after repeated belt trips,Inspect belt transfer point and reset the feeder before backlog escalates,Maintenance Lead,Crusher Crew,2026-08-24T12:30,Open,Equipment Breakdown,420,Tons
+14:00–16:00,JPM-PIT-WEST,Dozer clean-up delayed shovel access on the west face,Reassign one support dozer and clear the west face access lane immediately,Mine Operations Supervisor,Dozers,2026-08-24T16:30,Closed,Road / Haul Route,1.5,Hours
