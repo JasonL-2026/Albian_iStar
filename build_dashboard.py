@@ -5021,6 +5021,198 @@ function renderPlaybook(){
   h+=`<h4 style="margin:10px 0 6px;font-size:14px;color:#344">Downtime Root-Cause Log — Reporting Checklist</h4>`;
   h+=`</div>`;
 
+  // =========================================================
+  // SECTION 3 — MASTER TRACKING SCHEMA
+  // =========================================================
+  h+=`<div style="margin-bottom:24px" id="pb-s3">`;
+  h+=`<h3 style="margin:0 0 6px;font-size:20px;color:#2b2f36;border-bottom:2px solid #2f7a44;padding-bottom:6px">&#128203;&nbsp; 3 · The Master Tracking Schema</h3>`;
+  h+=`<p style="margin:0 0 14px;font-size:13px;color:var(--muted)">Every action item generated during a shift review must capture these specific fields. Complete all mandatory fields before closing an item.</p>`;
+
+  /* ---- schema reference table ---- */
+  h+=`<div style="overflow-x:auto;margin-bottom:18px">`;
+  h+=`<table class="lanetab" style="width:100%;table-layout:fixed">`;
+  h+=`<colgroup><col style="width:110px"><col style="width:150px"><col style="width:220px"><col></colgroup>`;
+  h+=`<thead><tr>
+    <th style="text-align:left;background:#f2f4f7">Field Category</th>
+    <th style="text-align:left;background:#f2f4f7">Column Name</th>
+    <th style="text-align:left;background:#f2f4f7">Data Type / Validation</th>
+    <th style="text-align:left;background:#f2f4f7">Purpose</th>
+  </tr></thead><tbody>`;
+
+  const schemaRows=[
+    {cat:'Context',   col:'Interval ID',           dtype:'Dropdown (06:00–08:00, 08:00–10:00, etc.)',            purpose:'Isolates when the bottleneck occurred.'},
+    {cat:'',          col:'Asset / Area ID',        dtype:'Text / Dropdown (e.g., SHV-02, CRUSH-01)',             purpose:'Pinpoints the exact piece of equipment or pit zone.'},
+    {cat:'Activity',  col:'Deviation Observed',     dtype:'Short Text',                                           purpose:'The problem statement (e.g., <em>Truck queue exceeds 15 mins</em>).'},
+    {cat:'',          col:'Corrective Action',      dtype:'Imperative Sentence',                                  purpose:'The exact directive issued to fix the variance.'},
+    {cat:'Ownership', col:'Action Owner',           dtype:'Single Name / Role Pin',                               purpose:'The <em>one</em> specific person accountable for execution.'},
+    {cat:'',          col:'Support Resource',       dtype:'Text / Dropdown <span style="color:#888">(Optional)</span>', purpose:'Secondary teams called to help (e.g., <em>Maintenance, Dozers</em>).'},
+    {cat:'Outcome',   col:'SLA Deadline',           dtype:'Timestamp (Interval End + 30 Mins)',                   purpose:'The hard cutoff time before automatic escalation.'},
+    {cat:'',          col:'Resolution Status',      dtype:'Dropdown (Open, In-Progress, Closed, Escalated)',      purpose:'Real-time status of the fix.'},
+    {cat:'',          col:'Root-Cause Code',        dtype:'Dropdown (Standardized list)',                         purpose:'Used for end-of-month engineering audits.'},
+    {cat:'',          col:'Final Production Impact',dtype:'Numeric (Tons, Meters, or Hours)',                     purpose:'Quantifiable result of the intervention.'},
+  ];
+
+  let lastCat='';
+  schemaRows.forEach(row=>{
+    const showCat=row.cat&&row.cat!==lastCat;
+    if(row.cat) lastCat=row.cat;
+    h+=`<tr>
+      <td style="font-weight:${showCat?700:400};color:${showCat?'#2b2f36':'transparent'};vertical-align:top;padding-top:8px">${showCat?row.cat:''}</td>
+      <td style="font-weight:700;vertical-align:top;padding-top:8px;white-space:normal">${row.col}</td>
+      <td style="vertical-align:top;padding-top:8px;white-space:normal;font-family:monospace;font-size:12px">${row.dtype}</td>
+      <td style="vertical-align:top;padding-top:8px;white-space:normal;font-size:13px">${row.purpose}</td>
+    </tr>`;
+  });
+  h+=`</tbody></table></div>`;
+
+  /* ---- action item entry form ---- */
+  h+=`<h4 style="margin:0 0 8px;font-size:15px;color:#2b2f36">&#43; Log New Action Item</h4>`;
+  h+=`<form id="pb-s3-form" onsubmit="pbS3Submit(event)" style="background:#f8f9fb;border:1px solid #dde1e8;border-radius:10px;padding:16px 18px">`;
+
+  /* row 1: Context */
+  h+=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">`;
+  h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">Interval ID <span style="font-weight:400;color:#888">(Context)</span>
+    <select name="intervalId" required style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px;background:#fff">
+      <option value="">— select —</option>
+      <option>06:00–08:00</option><option>08:00–10:00</option><option>10:00–12:00</option>
+      <option>12:00–14:00</option><option>14:00–16:00</option><option>16:00–18:00</option>
+      <option>18:00–20:00</option><option>20:00–22:00</option><option>22:00–00:00</option>
+      <option>00:00–02:00</option><option>02:00–04:00</option><option>04:00–06:00</option>
+    </select></label>`;
+  h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">Asset / Area ID <span style="font-weight:400;color:#888">(Context)</span>
+    <input type="text" name="assetId" placeholder="e.g. SHV-02, CRUSH-01" required style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px">
+  </label>`;
+  h+=`</div>`;
+
+  /* row 2: Activity */
+  h+=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">`;
+  h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">Deviation Observed <span style="font-weight:400;color:#888">(Activity)</span>
+    <input type="text" name="deviation" placeholder="e.g. Truck queue exceeds 15 mins" required style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px">
+  </label>`;
+  h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">Corrective Action <span style="font-weight:400;color:#888">(Activity)</span>
+    <input type="text" name="corrective" placeholder="Imperative directive to fix the variance" required style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px">
+  </label>`;
+  h+=`</div>`;
+
+  /* row 3: Ownership */
+  h+=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">`;
+  h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">Action Owner <span style="font-weight:400;color:#888">(Ownership)</span>
+    <input type="text" name="owner" placeholder="Full name or role" required style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px">
+  </label>`;
+  h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">Support Resource <span style="font-weight:400;color:#888">(Ownership — optional)</span>
+    <input type="text" name="support" placeholder="e.g. Maintenance, Dozers" style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px">
+  </label>`;
+  h+=`</div>`;
+
+  /* row 4: Outcome */
+  h+=`<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:16px">`;
+  h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">SLA Deadline <span style="font-weight:400;color:#888">(Outcome)</span>
+    <input type="datetime-local" name="slaDl" required style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px">
+  </label>`;
+  h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">Resolution Status <span style="font-weight:400;color:#888">(Outcome)</span>
+    <select name="status" required style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px;background:#fff">
+      <option value="">— select —</option>
+      <option>Open</option><option>In-Progress</option><option>Closed</option><option>Escalated</option>
+    </select></label>`;
+  h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">Root-Cause Code <span style="font-weight:400;color:#888">(Outcome)</span>
+    <select name="rootCause" required style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px;background:#fff">
+      <option value="">— select —</option>
+      <option>Equipment Breakdown</option><option>Operator Delay</option><option>Scheduling Conflict</option>
+      <option>Road / Haul Route</option><option>Crusher / Dump Queue</option><option>Shovel Hang Time</option>
+      <option>Fuel / Lube Delay</option><option>Weather</option><option>Other</option>
+    </select></label>`;
+  h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">Final Production Impact
+    <div style="display:flex;gap:4px;align-items:center;margin-top:4px">
+      <input type="number" name="impactVal" placeholder="0" min="0" step="any" style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px;width:0;flex:1">
+      <select name="impactUnit" style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px;background:#fff">
+        <option>Tons</option><option>Meters</option><option>Hours</option>
+      </select>
+    </div></label>`;
+  h+=`</div>`;
+
+  /* submit */
+  h+=`<div style="display:flex;align-items:center;gap:12px">`;
+  h+=`<button type="submit" class="tlbtn" style="padding:8px 22px;font-size:13px;background:#2f7a44;color:#fff;border:none;border-radius:6px;cursor:pointer">&#43; Add Action Item</button>`;
+  h+=`<span id="pb-s3-msg" style="font-size:12px;color:#2f7a44;display:none">&#10003; Action item logged.</span>`;
+  h+=`</div>`;
+  h+=`</form>`;
+
+  /* ---- logged items table ---- */
+  h+=`<div id="pb-s3-list" style="margin-top:18px"></div>`;
+  h+=`</div>`;
+
+  /* ---- inline JS for form logic ---- */
+  h+=`<script>
+  (function(){
+    if(window._pbS3Init) return;
+    window._pbS3Init=true;
+    window._pbS3Items=window._pbS3Items||[];
+
+    function statusBadge(s){
+      const m={Open:'#e23b32','In-Progress':'#b85c00',Closed:'#2f7a44',Escalated:'#7b1fa2'};
+      return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;color:#fff;background:'+(m[s]||'#888')+'">'+s+'</span>';
+    }
+
+    function renderList(){
+      const el=document.getElementById('pb-s3-list');
+      if(!el) return;
+      if(!window._pbS3Items.length){el.innerHTML='';return;}
+      let t='<h4 style="margin:0 0 8px;font-size:14px;color:#2b2f36">Logged Action Items ('+window._pbS3Items.length+')</h4>';
+      t+='<div style="overflow-x:auto"><table class="lanetab" style="width:100%"><thead><tr>'
+        +'<th>#</th><th>Interval</th><th>Asset</th><th>Deviation</th><th>Corrective Action</th>'
+        +'<th>Owner</th><th>Support</th><th>SLA Deadline</th><th>Status</th><th>Root Cause</th>'
+        +'<th style="text-align:right">Impact</th><th></th>'
+        +'</tr></thead><tbody>';
+      window._pbS3Items.forEach(function(item,i){
+        t+='<tr>'
+          +'<td style="color:var(--muted)">'+(i+1)+'</td>'
+          +'<td style="white-space:nowrap">'+item.intervalId+'</td>'
+          +'<td style="white-space:nowrap;font-weight:600">'+item.assetId+'</td>'
+          +'<td>'+item.deviation+'</td>'
+          +'<td>'+item.corrective+'</td>'
+          +'<td style="white-space:nowrap">'+item.owner+'</td>'
+          +'<td style="color:var(--muted)">'+( item.support||'—' )+'</td>'
+          +'<td style="white-space:nowrap;font-size:12px">'+item.slaDl+'</td>'
+          +'<td>'+statusBadge(item.status)+'</td>'
+          +'<td style="font-size:12px">'+item.rootCause+'</td>'
+          +'<td style="text-align:right;font-weight:600;white-space:nowrap">'+(item.impactVal?item.impactVal+' '+item.impactUnit:'—')+'</td>'
+          +'<td><button class="tlbtn" style="color:#c0392b" onclick="pbS3Delete('+i+')">✕</button></td>'
+          +'</tr>';
+      });
+      t+='</tbody></table></div>';
+      el.innerHTML=t;
+    }
+
+    window.pbS3Submit=function(e){
+      e.preventDefault();
+      const f=e.target;
+      const fd=new FormData(f);
+      window._pbS3Items.push({
+        intervalId: fd.get('intervalId'),
+        assetId:    fd.get('assetId'),
+        deviation:  fd.get('deviation'),
+        corrective: fd.get('corrective'),
+        owner:      fd.get('owner'),
+        support:    fd.get('support'),
+        slaDl:      fd.get('slaDl'),
+        status:     fd.get('status'),
+        rootCause:  fd.get('rootCause'),
+        impactVal:  fd.get('impactVal'),
+        impactUnit: fd.get('impactUnit'),
+      });
+      f.reset();
+      const msg=document.getElementById('pb-s3-msg');
+      if(msg){msg.style.display='inline';setTimeout(()=>{msg.style.display='none';},2500);}
+      renderList();
+    };
+    window.pbS3Delete=function(i){
+      window._pbS3Items.splice(i,1);
+      renderList();
+    };
+    renderList();
+  })();
+  <\/script>`;
+
   el.innerHTML=h;
 }
 const TABS=[['overview','Shift Overview',0],['recommendations','Last 14 Shifts',0],['playbook','Playbook',0],['matplace','Material Placement',0],['balance','Truck / Shovel Balance',0],['shovel2','Shovel Waterfall',0],['loading','Loading drill-down',1],['shovprod','Shovel Productivity',1],['trucks','Truck Waterfall',0],['haulage','Haulage drill-down',1],['truckflow','Truck Flow',1],['delays','Delays & Standby',1],['truckprod','Truck Productivity',1],['hourlyperf','Hourly Production',0],['lube','Fuel and Lube',0],['shiftstats','Shift Stats',0],['trends','Cross-Shift Trends',0],['appendix','Appendix',0],['sandbox','Sandbox',0]];
