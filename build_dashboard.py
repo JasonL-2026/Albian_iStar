@@ -56,7 +56,13 @@ _WF_PRIO_META_SHOVELS={
 }
 _WF_PRIO_THRESH=7500  # minimum |delta_t| to include in summary
 _REC_WINDOW_SHIFTS=14
-MASTER_TRACKING_ACTIONS_CSV=f'{BASE}/master_tracking_actions.csv'
+DEFAULT_DATADIR=f'{BASE}/Data'
+DATADIR=os.environ.get('DASH_DATADIR') or DEFAULT_DATADIR   # override with DASH_DATADIR to point at another folder
+MASTER_TRACKING_ACTIONS_CSV_CANDIDATES=[
+    f'{DATADIR}/master_tracking_actions.csv',
+    f'{DEFAULT_DATADIR}/master_tracking_actions.csv',
+    f'{BASE}/master_tracking_actions.csv',
+]
 MASTER_TRACKING_ACTION_FIELDS=[
     'intervalId','assetId','deviation','corrective','owner',
     'support','slaDl','status','rootCause','impactVal','impactUnit'
@@ -134,12 +140,19 @@ def merge_avail_decomp(avails):
 
 def load_master_tracking_actions():
     items=[]
-    if os.path.exists(MASTER_TRACKING_ACTIONS_CSV):
-        with open(MASTER_TRACKING_ACTIONS_CSV, encoding='utf-8-sig', newline='') as f:
+    seen=set()
+    for path in MASTER_TRACKING_ACTIONS_CSV_CANDIDATES:
+        if path in seen:
+            continue
+        seen.add(path)
+        if not os.path.exists(path):
+            continue
+        with open(path, encoding='utf-8-sig', newline='') as f:
             for row in csv.DictReader(f):
                 if not any((row.get(k) or '').strip() for k in MASTER_TRACKING_ACTION_FIELDS):
                     continue
                 items.append({k:(row.get(k,'') or '').strip() for k in MASTER_TRACKING_ACTION_FIELDS})
+        break
     return items
 
 def merge_wf_period(wfs):
@@ -218,7 +231,6 @@ def load_pitbud(fn):
 PITBUD={'MRM':load_pitbud(f'{BASE}/Budget/MRM 2026 Budget.csv'),'JPM':load_pitbud(f'{BASE}/Budget/JPM 2026 Budget.csv')}
 
 # ---------- data (all shifts, loaded once) ----------
-DATADIR=os.environ.get('DASH_DATADIR') or f'{BASE}/Data'   # override with DASH_DATADIR to point at another folder
 _COLRE=re.compile(r'^Dtl_(.*?)(?:_\d+)?$')
 def _normcol(h):   # SSRS exports name columns "Dtl_<Name>_<pos>"; strip that (and BOM) → plain <Name>. Leaves plain headers unchanged.
     h=h.strip().lstrip('﻿'); m=_COLRE.match(h); return m.group(1) if m else h

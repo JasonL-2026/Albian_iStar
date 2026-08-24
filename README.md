@@ -54,7 +54,7 @@ See [`Dashboard_Methodology.md`](Dashboard_Methodology.md) for a full specificat
 
 `build_dashboard.py` also generates `iSTAR_dashboard.html`, which uses the same tabs/features but loads data at runtime from an API endpoint (`/api/dashboard-data` by default) instead of embedded local JSON.
 
-Section 3 (Master Tracking Schema) now seeds its action register from `master_tracking_actions.csv`, keeps browser-side updates in local storage, and lets users export the current register back to CSV.
+Section 3 (Master Tracking Schema) now seeds its action register from `Data/master_tracking_actions.csv`, keeps browser-side updates in local storage, and lets users export the current register back to CSV.
 
 Quick start:
 
@@ -81,7 +81,6 @@ Optional runtime settings:
 Albian_iSTAR/
 ├── build_dashboard.py          # Main builder — produces Haulage_Dashboard.html
 ├── Haulage_Dashboard.html      # Built output (open in browser)
-├── master_tracking_actions.csv # Seed/export schema rows for Section 3 action tracking
 ├── Dashboard_Methodology.md    # Specification for every KPI and calculation
 ├── CHANGELOG.md                # Version history
 ├── update_dashboard.sh         # One-click updater (Linux/macOS)
@@ -89,6 +88,7 @@ Albian_iSTAR/
 ├── lib_chartjs.js              # Bundled Chart.js (offline capable)
 ├── istarlogov2.png             # Logo
 ├── Data/                       # Live operational CSVs (NOT committed — see below)
+│   ├── master_tracking_actions.csv # Seed/export schema rows for Section 3 action tracking
 │   └── samples/                # Sample/anonymized CSVs for CI testing
 ├── Budget/                     # Budget CSVs by pit (MRM, JPM)
 │   ├── MRM 2026 Budget.csv
@@ -107,7 +107,7 @@ Albian_iSTAR/
 
 ## Data Hygiene
 
-**Live operational CSVs in `Data/` are not committed to this repository.**
+**Live operational CSVs in `Data/` are not committed to this repository, except for `Data/master_tracking_actions.csv`.**
 They contain sensitive production data and change every shift.
 
 - Store live CSVs on a shared network drive or SharePoint folder

@@ -370,6 +370,7 @@ FodyWeavers.xsd
 # change every shift. Store on a shared drive; do NOT commit.
 Data/*.csv
 Data/*.CSV
+!Data/master_tracking_actions.csv
 
 # Allow sample/anonymized CSVs used for CI testing
 !Data/samples/
