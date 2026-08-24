@@ -5052,45 +5052,7 @@ function renderPlaybook(){
   // SECTION 3 — MASTER TRACKING SCHEMA
   // =========================================================
   h+=`<div style="margin-bottom:24px" id="pb-s3">`;
-  h+=`<h3 style="margin:0 0 6px;font-size:20px;color:#2b2f36;border-bottom:2px solid #2f7a44;padding-bottom:6px">&#128203;&nbsp; 3 · The Master Tracking Schema</h3>`;
-  h+=`<p style="margin:0 0 14px;font-size:13px;color:var(--muted)">Every action item generated during a shift review must capture these specific fields. Complete all mandatory fields before closing an item.</p>`;
-
-  /* ---- schema reference table ---- */
-  h+=`<div style="overflow-x:auto;margin-bottom:18px">`;
-  h+=`<table class="lanetab" style="width:100%;table-layout:fixed">`;
-  h+=`<colgroup><col style="width:110px"><col style="width:150px"><col style="width:220px"><col></colgroup>`;
-  h+=`<thead><tr>
-    <th style="text-align:left;background:#f2f4f7">Field Category</th>
-    <th style="text-align:left;background:#f2f4f7">Column Name</th>
-    <th style="text-align:left;background:#f2f4f7">Data Type / Validation</th>
-    <th style="text-align:left;background:#f2f4f7">Purpose</th>
-  </tr></thead><tbody>`;
-
-  const schemaRows=[
-    {cat:'Context',   col:'Interval ID',           dtype:'Dropdown (06:00–08:00, 08:00–10:00, etc.)',            purpose:'Isolates when the bottleneck occurred.'},
-    {cat:'',          col:'Asset / Area ID',        dtype:'Text / Dropdown (e.g., SHV-02, CRUSH-01)',             purpose:'Pinpoints the exact piece of equipment or pit zone.'},
-    {cat:'Activity',  col:'Deviation Observed',     dtype:'Short Text',                                           purpose:'The problem statement (e.g., <em>Truck queue exceeds 15 mins</em>).'},
-    {cat:'',          col:'Corrective Action',      dtype:'Imperative Sentence',                                  purpose:'The exact directive issued to fix the variance.'},
-    {cat:'Ownership', col:'Action Owner',           dtype:'Single Name / Role Pin',                               purpose:'The <em>one</em> specific person accountable for execution.'},
-    {cat:'',          col:'Support Resource',       dtype:'Text / Dropdown <span style="color:#888">(Optional)</span>', purpose:'Secondary teams called to help (e.g., <em>Maintenance, Dozers</em>).'},
-    {cat:'Outcome',   col:'SLA Deadline',           dtype:'Timestamp (Interval End + 30 Mins)',                   purpose:'The hard cutoff time before automatic escalation.'},
-    {cat:'',          col:'Resolution Status',      dtype:'Dropdown (Open, In-Progress, Closed, Escalated)',      purpose:'Real-time status of the fix.'},
-    {cat:'',          col:'Root-Cause Code',        dtype:'Dropdown (Standardized list)',                         purpose:'Used for end-of-month engineering audits.'},
-    {cat:'',          col:'Final Production Impact',dtype:'Numeric (Tons, Meters, or Hours)',                     purpose:'Quantifiable result of the intervention.'},
-  ];
-
-  let lastCat='';
-  schemaRows.forEach(row=>{
-    const showCat=row.cat&&row.cat!==lastCat;
-    if(row.cat) lastCat=row.cat;
-    h+=`<tr>
-      <td style="font-weight:${showCat?700:400};color:${showCat?'#2b2f36':'transparent'};vertical-align:top;padding-top:8px">${showCat?row.cat:''}</td>
-      <td style="font-weight:700;vertical-align:top;padding-top:8px;white-space:normal">${row.col}</td>
-      <td style="vertical-align:top;padding-top:8px;white-space:normal;font-family:monospace;font-size:12px">${row.dtype}</td>
-      <td style="vertical-align:top;padding-top:8px;white-space:normal;font-size:13px">${row.purpose}</td>
-    </tr>`;
-  });
-  h+=`</tbody></table></div>`;
+  h+=`<h3 style="margin:0 0 6px;font-size:20px;color:#2b2f36;border-bottom:2px solid #2f7a44;padding-bottom:6px">&#128203;&nbsp; 3 · Logged Action Items</h3>`;
 
   /* ---- action controls ---- */
   h+=`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">`;
