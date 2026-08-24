@@ -65,7 +65,7 @@ MASTER_TRACKING_ACTIONS_CSV_CANDIDATES=[
 ]
 MASTER_TRACKING_ACTION_FIELDS=[
     'mine','intervalId','assetId','deviation','corrective','owner',
-    'support','slaDl','status','rootCause','impactVal','impactUnit'
+    'support','slaDl','status','rootCause','impactVal','impactUnit','dateCreated'
 ]
 
 def compute_wf_priority_summary(wf, swf=None, shift_count=1):
@@ -5264,7 +5264,7 @@ function initPbS3ActionRegister(){
       return;
     }
     t+='<div style="overflow-x:auto"><table class="lanetab" style="width:100%"><thead><tr>'
-      +'<th>#</th><th>Mine</th><th>Action Summary</th><th>Ownership</th><th>Status</th><th>SLA Deadline</th><th></th>'
+      +'<th>#</th><th>Mine</th><th>Action Summary</th><th>Ownership</th><th>Status</th><th>SLA Deadline</th><th>Date Created</th><th></th>'
       +'</tr></thead><tbody>';
     visItems.forEach(function(x,row){
       const item=x.item, origIdx=x.i;
@@ -5277,6 +5277,7 @@ function initPbS3ActionRegister(){
         +'<td>'+ownerBlock+'</td>'
         +'<td>'+statusBadge(item.status)+'</td>'
         +'<td style="white-space:nowrap;font-size:12px">'+formatSla(item.slaDl)+'</td>'
+        +'<td style="white-space:nowrap;font-size:12px">'+formatSla(item.dateCreated)+'</td>'
         +'<td onclick="event.stopPropagation()"><button type="button" class="tlbtn" style="color:#c0392b" onclick="pbS3Delete('+origIdx+')">✕</button></td>'
         +'</tr>';
     });
@@ -5349,21 +5350,25 @@ function initPbS3ActionRegister(){
     e.preventDefault();
     const f=e.target;
     const fd=new FormData(f);
+    const isEdit=window._pbS3EditIdx>=0;
+    const existingDateCreated=isEdit?(window._pbS3Items[window._pbS3EditIdx]||{}).dateCreated||'':'';
+    const nowIso=(function(){const d=new Date();const pad=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());})();
     const newItem=normalizeItem({
-      mine:       fd.get('mine'),
-      intervalId: fd.get('intervalId'),
-      assetId:    fd.get('assetId'),
-      deviation:  fd.get('deviation'),
-      corrective: fd.get('corrective'),
-      owner:      fd.get('owner'),
-      support:    fd.get('support'),
-      slaDl:      fd.get('slaDl'),
-      status:     fd.get('status'),
-      rootCause:  fd.get('rootCause'),
-      impactVal:  fd.get('impactVal'),
-      impactUnit: fd.get('impactUnit'),
+      mine:        fd.get('mine'),
+      intervalId:  fd.get('intervalId'),
+      assetId:     fd.get('assetId'),
+      deviation:   fd.get('deviation'),
+      corrective:  fd.get('corrective'),
+      owner:       fd.get('owner'),
+      support:     fd.get('support'),
+      slaDl:       fd.get('slaDl'),
+      status:      fd.get('status'),
+      rootCause:   fd.get('rootCause'),
+      impactVal:   fd.get('impactVal'),
+      impactUnit:  fd.get('impactUnit'),
+      dateCreated: existingDateCreated || nowIso,
     });
-    if(window._pbS3EditIdx>=0){
+    if(isEdit){
       window._pbS3Items[window._pbS3EditIdx]=newItem;
     } else {
       window._pbS3Items.push(newItem);
