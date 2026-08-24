@@ -5255,21 +5255,29 @@ function initPbS3ActionRegister(){
       el.innerHTML='<div style="padding:14px 16px;border:1px dashed #cfd6e1;border-radius:10px;background:#fbfcfe;color:#6b7280">No action items logged yet. Use <b>Log New Action Item</b> to create the first record.</div>';
       return;
     }
-    let t='<h4 style="margin:0 0 8px;font-size:14px;color:#2b2f36">Section 3 Action Register ('+window._pbS3Items.length+')</h4>';
+    // Filter by selected mine: Combined shows all; MRM/JPM shows only matching items
+    const visItems=window._pbS3Items.map(function(item,i){return{item,i};}).filter(function(x){return view==='Combined'||!x.item.mine||x.item.mine===view;});
+    const mineLabel=view==='Combined'?'All Mines':view;
+    let t='<h4 style="margin:0 0 8px;font-size:14px;color:#2b2f36">Section 3 Action Register — '+esc(mineLabel)+' ('+visItems.length+(visItems.length!==window._pbS3Items.length?' of '+window._pbS3Items.length:'')+' items)</h4>';
+    if(!visItems.length){
+      el.innerHTML=t+'<div style="padding:14px 16px;border:1px dashed #cfd6e1;border-radius:10px;background:#fbfcfe;color:#6b7280">No action items for <b>'+esc(mineLabel)+'</b>. Switch to <b>Combined</b> to see all, or log a new action.</div>';
+      return;
+    }
     t+='<div style="overflow-x:auto"><table class="lanetab" style="width:100%"><thead><tr>'
       +'<th>#</th><th>Mine</th><th>Action Summary</th><th>Ownership</th><th>Status</th><th>SLA Deadline</th><th></th>'
       +'</tr></thead><tbody>';
-    window._pbS3Items.forEach(function(item,i){
+    visItems.forEach(function(x,row){
+      const item=x.item, origIdx=x.i;
       const ownerBlock='<div style="font-weight:600;white-space:nowrap">'+esc(item.owner||'—')+'</div>'
         +(item.support?'<div style="font-size:12px;color:var(--muted)">Support: '+esc(item.support)+'</div>':'');
-      t+='<tr style="cursor:pointer" onclick="pbS3ViewItem('+i+')" title="Click to view / edit">'
-        +'<td style="color:var(--muted)">'+(i+1)+'</td>'
+      t+='<tr style="cursor:pointer" onclick="pbS3ViewItem('+origIdx+')" title="Click to view / edit">'
+        +'<td style="color:var(--muted)">'+(row+1)+'</td>'
         +'<td>'+mineBadge(item.mine)+'</td>'
         +'<td><div style="font-weight:600;color:#2b2f36;margin-bottom:2px">'+esc(item.assetId||'Unassigned asset')+'</div><div style="font-size:12px;line-height:1.45">'+esc(summaryText(item))+'</div><div style="font-size:11px;color:var(--muted);margin-top:4px">Root cause: '+esc(item.rootCause||'—')+' · Impact: '+esc(item.impactVal?(item.impactVal+' '+(item.impactUnit||'')):'—')+'</div></td>'
         +'<td>'+ownerBlock+'</td>'
         +'<td>'+statusBadge(item.status)+'</td>'
         +'<td style="white-space:nowrap;font-size:12px">'+formatSla(item.slaDl)+'</td>'
-        +'<td onclick="event.stopPropagation()"><button type="button" class="tlbtn" style="color:#c0392b" onclick="pbS3Delete('+i+')">✕</button></td>'
+        +'<td onclick="event.stopPropagation()"><button type="button" class="tlbtn" style="color:#c0392b" onclick="pbS3Delete('+origIdx+')">✕</button></td>'
         +'</tr>';
     });
     t+='</tbody></table></div>';
@@ -5300,7 +5308,11 @@ function initPbS3ActionRegister(){
   window.pbS3OpenModal=function(){
     setModalMode(-1);
     const f=document.getElementById('pb-s3-form');
-    if(f) f.reset();
+    if(f){
+      f.reset();
+      // Pre-select Mine based on the currently selected view
+      if(view==='MRM'||view==='JPM'){const mSel=f.elements['mine'];if(mSel)mSel.value=view;}
+    }
     const modal=document.getElementById('pb-s3-modal');
     if(modal) modal.style.display='block';
   };
