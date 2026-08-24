@@ -5176,154 +5176,155 @@ function renderPlaybook(){
   h+=`<div id="pb-s3-list" style="margin-top:10px"></div>`;
   h+=`</div>`;
 
-  /* ---- inline JS for form logic ---- */
-  h+=`<script>
-  (function(){
-    if(window._pbS3Init) return;
-    window._pbS3Init=true;
-    const STORAGE_KEY='albianPbS3ItemsV1';
-    const CSV_FIELDS=__MASTER_TRACKING_ACTION_FIELDS__;
-    window._pbS3SeedItems=Array.isArray(__MASTER_TRACKING_ACTIONS__)?__MASTER_TRACKING_ACTIONS__:[];
-
-    function esc(v){
-      return String(v==null?'':v).replace(/[&<>"']/g,function(ch){
-        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];
-      });
-    }
-
-    function csvEsc(v){
-      return '"'+String(v==null?'':v).replace(/"/g,'""')+'"';
-    }
-
-    function normalizeItem(item){
-      const out={};
-      CSV_FIELDS.forEach(function(key){ out[key]=String(item&&item[key]!=null?item[key]:'').trim(); });
-      return out;
-    }
-
-    function saveItems(){
-      try{localStorage.setItem(STORAGE_KEY, JSON.stringify(window._pbS3Items));}catch(e){}
-    }
-
-    function loadItems(){
-      try{
-        const raw=localStorage.getItem(STORAGE_KEY);
-        if(raw!=null){
-          const parsed=JSON.parse(raw);
-          if(Array.isArray(parsed)) return parsed.map(normalizeItem);
-        }
-      }catch(e){}
-      return window._pbS3SeedItems.map(normalizeItem);
-    }
-
-    function formatSla(v){
-      return esc(String(v||'').replace('T',' ')) || '—';
-    }
-
-    function statusBadge(s){
-      const m={Open:'#e23b32','In-Progress':'#b85c00',Closed:'#2f7a44',Escalated:'#7b1fa2'};
-      return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;color:#fff;background:'+(m[s]||'#888')+'">'+esc(s||'Unknown')+'</span>';
-    }
-
-    function summaryText(item){
-      return [
-        item.deviation || 'No deviation recorded',
-        item.corrective ? ('Action: '+item.corrective) : '',
-        item.assetId ? ('Asset: '+item.assetId) : '',
-        item.intervalId ? ('Window: '+item.intervalId) : ''
-      ].filter(Boolean).join(' · ');
-    }
-
-    function renderList(){
-      const el=document.getElementById('pb-s3-list');
-      if(!el) return;
-      if(!window._pbS3Items.length){
-        el.innerHTML='<div style="padding:14px 16px;border:1px dashed #cfd6e1;border-radius:10px;background:#fbfcfe;color:#6b7280">No action items logged yet. Use <b>Log New Action Item</b> to create the first record.</div>';
-        return;
-      }
-      let t='<h4 style="margin:0 0 8px;font-size:14px;color:#2b2f36">Section 3 Action Register ('+window._pbS3Items.length+')</h4>';
-      t+='<div style="overflow-x:auto"><table class="lanetab" style="width:100%"><thead><tr>'
-        +'<th>#</th><th>Action Summary</th><th>Ownership</th><th>Status</th><th>SLA Deadline</th><th></th>'
-        +'</tr></thead><tbody>';
-      window._pbS3Items.forEach(function(item,i){
-        const ownerBlock='<div style="font-weight:600;white-space:nowrap">'+esc(item.owner||'—')+'</div>'
-          +(item.support?'<div style="font-size:12px;color:var(--muted)">Support: '+esc(item.support)+'</div>':'');
-        t+='<tr>'
-          +'<td style="color:var(--muted)">'+(i+1)+'</td>'
-          +'<td><div style="font-weight:600;color:#2b2f36;margin-bottom:2px">'+esc(item.assetId||'Unassigned asset')+'</div><div style="font-size:12px;line-height:1.45">'+esc(summaryText(item))+'</div><div style="font-size:11px;color:var(--muted);margin-top:4px">Root cause: '+esc(item.rootCause||'—')+' · Impact: '+esc(item.impactVal?(item.impactVal+' '+(item.impactUnit||'')):'—')+'</div></td>'
-          +'<td>'+ownerBlock+'</td>'
-          +'<td>'+statusBadge(item.status)+'</td>'
-          +'<td style="white-space:nowrap;font-size:12px">'+formatSla(item.slaDl)+'</td>'
-          +'<td><button type="button" class="tlbtn" style="color:#c0392b" onclick="pbS3Delete('+i+')">✕</button></td>'
-          +'</tr>';
-      });
-      t+='</tbody></table></div>';
-      el.innerHTML=t;
-    }
-
-    window._pbS3Items=loadItems();
-
-    window.pbS3OpenModal=function(){
-      const modal=document.getElementById('pb-s3-modal');
-      if(modal) modal.style.display='block';
-    };
-    window.pbS3CloseModal=function(){
-      const modal=document.getElementById('pb-s3-modal');
-      if(modal) modal.style.display='none';
-    };
-    window.pbS3ExportCsv=function(){
-      const rows=[CSV_FIELDS.join(',')].concat(window._pbS3Items.map(function(item){
-        return CSV_FIELDS.map(function(key){ return csvEsc(item[key]); }).join(',');
-      }));
-      const blob=new Blob([rows.join('\\n')],{type:'text/csv;charset=utf-8;'});
-      const url=URL.createObjectURL(blob);
-      const a=document.createElement('a');
-      a.href=url;
-      a.download='master_tracking_actions.csv';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(function(){URL.revokeObjectURL(url);},0);
-    };
-
-    window.pbS3Submit=function(e){
-      e.preventDefault();
-      const f=e.target;
-      const fd=new FormData(f);
-      window._pbS3Items.push(normalizeItem({
-        intervalId: fd.get('intervalId'),
-        assetId:    fd.get('assetId'),
-        deviation:  fd.get('deviation'),
-        corrective: fd.get('corrective'),
-        owner:      fd.get('owner'),
-        support:    fd.get('support'),
-        slaDl:      fd.get('slaDl'),
-        status:     fd.get('status'),
-        rootCause:  fd.get('rootCause'),
-        impactVal:  fd.get('impactVal'),
-        impactUnit: fd.get('impactUnit'),
-      }));
-      saveItems();
-      f.reset();
-      const msg=document.getElementById('pb-s3-msg');
-      if(msg){msg.style.display='inline';setTimeout(()=>{msg.style.display='none';},2500);}
-      window.pbS3CloseModal();
-      renderList();
-    };
-    window.pbS3Delete=function(i){
-      window._pbS3Items.splice(i,1);
-      saveItems();
-      renderList();
-    };
-    document.addEventListener('click',function(e){
-      const modal=document.getElementById('pb-s3-modal');
-      if(modal&&e.target===modal) window.pbS3CloseModal();
-    });
-    renderList();
-  })();
-  <\/script>`;
-
   el.innerHTML=h;
+  initPbS3ActionRegister();
+}
+function initPbS3ActionRegister(){
+  const STORAGE_KEY='albianPbS3ItemsV1';
+  const CSV_FIELDS=__MASTER_TRACKING_ACTION_FIELDS__;
+  window._pbS3SeedItems=Array.isArray(__MASTER_TRACKING_ACTIONS__)?__MASTER_TRACKING_ACTIONS__:[];
+
+  function esc(v){
+    return String(v==null?'':v).replace(/[&<>"']/g,function(ch){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];
+    });
+  }
+
+  function csvEsc(v){
+    return '"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  }
+
+  function normalizeItem(item){
+    const out={};
+    CSV_FIELDS.forEach(function(key){ out[key]=String(item&&item[key]!=null?item[key]:'').trim(); });
+    return out;
+  }
+
+  function saveItems(){
+    try{localStorage.setItem(STORAGE_KEY, JSON.stringify(window._pbS3Items));}catch(e){}
+  }
+
+  function loadItems(){
+    try{
+      const raw=localStorage.getItem(STORAGE_KEY);
+      if(raw!=null){
+        const parsed=JSON.parse(raw);
+        if(Array.isArray(parsed)) return parsed.map(normalizeItem);
+      }
+    }catch(e){}
+    return window._pbS3SeedItems.map(normalizeItem);
+  }
+
+  function formatSla(v){
+    return esc(String(v||'').replace('T',' ')) || '—';
+  }
+
+  function statusBadge(s){
+    const m={Open:'#e23b32','In-Progress':'#b85c00',Closed:'#2f7a44',Escalated:'#7b1fa2'};
+    return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;color:#fff;background:'+(m[s]||'#888')+'">'+esc(s||'Unknown')+'</span>';
+  }
+
+  function summaryText(item){
+    return [
+      item.deviation || 'No deviation recorded',
+      item.corrective ? ('Action: '+item.corrective) : '',
+      item.assetId ? ('Asset: '+item.assetId) : '',
+      item.intervalId ? ('Window: '+item.intervalId) : ''
+    ].filter(Boolean).join(' · ');
+  }
+
+  function renderList(){
+    const el=document.getElementById('pb-s3-list');
+    if(!el) return;
+    if(!window._pbS3Items.length){
+      el.innerHTML='<div style="padding:14px 16px;border:1px dashed #cfd6e1;border-radius:10px;background:#fbfcfe;color:#6b7280">No action items logged yet. Use <b>Log New Action Item</b> to create the first record.</div>';
+      return;
+    }
+    let t='<h4 style="margin:0 0 8px;font-size:14px;color:#2b2f36">Section 3 Action Register ('+window._pbS3Items.length+')</h4>';
+    t+='<div style="overflow-x:auto"><table class="lanetab" style="width:100%"><thead><tr>'
+      +'<th>#</th><th>Action Summary</th><th>Ownership</th><th>Status</th><th>SLA Deadline</th><th></th>'
+      +'</tr></thead><tbody>';
+    window._pbS3Items.forEach(function(item,i){
+      const ownerBlock='<div style="font-weight:600;white-space:nowrap">'+esc(item.owner||'—')+'</div>'
+        +(item.support?'<div style="font-size:12px;color:var(--muted)">Support: '+esc(item.support)+'</div>':'');
+      t+='<tr>'
+        +'<td style="color:var(--muted)">'+(i+1)+'</td>'
+        +'<td><div style="font-weight:600;color:#2b2f36;margin-bottom:2px">'+esc(item.assetId||'Unassigned asset')+'</div><div style="font-size:12px;line-height:1.45">'+esc(summaryText(item))+'</div><div style="font-size:11px;color:var(--muted);margin-top:4px">Root cause: '+esc(item.rootCause||'—')+' · Impact: '+esc(item.impactVal?(item.impactVal+' '+(item.impactUnit||'')):'—')+'</div></td>'
+        +'<td>'+ownerBlock+'</td>'
+        +'<td>'+statusBadge(item.status)+'</td>'
+        +'<td style="white-space:nowrap;font-size:12px">'+formatSla(item.slaDl)+'</td>'
+        +'<td><button type="button" class="tlbtn" style="color:#c0392b" onclick="pbS3Delete('+i+')">✕</button></td>'
+        +'</tr>';
+    });
+    t+='</tbody></table></div>';
+    el.innerHTML=t;
+  }
+
+  if(window._pbS3Init){
+    renderList();
+    return;
+  }
+
+  window._pbS3Init=true;
+  window._pbS3Items=loadItems();
+
+  window.pbS3OpenModal=function(){
+    const modal=document.getElementById('pb-s3-modal');
+    if(modal) modal.style.display='block';
+  };
+  window.pbS3CloseModal=function(){
+    const modal=document.getElementById('pb-s3-modal');
+    if(modal) modal.style.display='none';
+  };
+  window.pbS3ExportCsv=function(){
+    const rows=[CSV_FIELDS.join(',')].concat(window._pbS3Items.map(function(item){
+      return CSV_FIELDS.map(function(key){ return csvEsc(item[key]); }).join(',');
+    }));
+    const blob=new Blob([rows.join('\\n')],{type:'text/csv;charset=utf-8;'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download='master_tracking_actions.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function(){URL.revokeObjectURL(url);},0);
+  };
+
+  window.pbS3Submit=function(e){
+    e.preventDefault();
+    const f=e.target;
+    const fd=new FormData(f);
+    window._pbS3Items.push(normalizeItem({
+      intervalId: fd.get('intervalId'),
+      assetId:    fd.get('assetId'),
+      deviation:  fd.get('deviation'),
+      corrective: fd.get('corrective'),
+      owner:      fd.get('owner'),
+      support:    fd.get('support'),
+      slaDl:      fd.get('slaDl'),
+      status:     fd.get('status'),
+      rootCause:  fd.get('rootCause'),
+      impactVal:  fd.get('impactVal'),
+      impactUnit: fd.get('impactUnit'),
+    }));
+    saveItems();
+    f.reset();
+    const msg=document.getElementById('pb-s3-msg');
+    if(msg){msg.style.display='inline';setTimeout(()=>{msg.style.display='none';},2500);}
+    window.pbS3CloseModal();
+    renderList();
+  };
+  window.pbS3Delete=function(i){
+    window._pbS3Items.splice(i,1);
+    saveItems();
+    renderList();
+  };
+  document.addEventListener('click',function(e){
+    const modal=document.getElementById('pb-s3-modal');
+    if(modal&&e.target===modal) window.pbS3CloseModal();
+  });
+  renderList();
 }
 const TABS=[['overview','Shift Overview',0],['recommendations','Last 14 Shifts',0],['playbook','Playbook',0],['matplace','Material Placement',0],['balance','Truck / Shovel Balance',0],['shovel2','Shovel Waterfall',0],['loading','Loading drill-down',1],['shovprod','Shovel Productivity',1],['trucks','Truck Waterfall',0],['haulage','Haulage drill-down',1],['truckflow','Truck Flow',1],['delays','Delays & Standby',1],['truckprod','Truck Productivity',1],['hourlyperf','Hourly Production',0],['lube','Fuel and Lube',0],['shiftstats','Shift Stats',0],['trends','Cross-Shift Trends',0],['appendix','Appendix',0],['sandbox','Sandbox',0]];
 let tab='overview';
