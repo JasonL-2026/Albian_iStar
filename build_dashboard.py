@@ -2917,21 +2917,16 @@ body.sb-auto .pagenav{display:flex}
 
     <section class="page" id="pg-lube" hidden>
       <div class="charts">
-        <div class="chartcard" style="display:flex;flex-direction:column;gap:14px">
-          <div><h3>Fuel Level at Refuel <span class="sub" id="lusub"></span></h3><div class="chartwrap"><canvas id="chLubeFuel"></canvas></div></div>
-        </div>
-        <div class="chartcard" style="display:flex;flex-direction:column;gap:14px">
-          <div><h3>Hourly Fuel Delay — This Shift <span class="sub" id="lhsub"></span></h3><div class="chartwrap" style="height:var(--chart-h-tall)"><canvas id="chLubeTrend"></canvas></div></div>
-          <div><h3>Assignment Automation</h3><div id="lubeAssignAuto"></div></div>
-          <div><h3>Actual vs Expected by Reason</h3><div id="lubeReasons"></div></div>
-          <div><h3>Faulty Fuel-Level Sensors <span class="sub" id="lfssub"></span></h3><div id="lubeFaulty"></div></div>
-        </div>
+        <div class="chartcard"><h3>Fuel Level at Refuel <span class="sub" id="lusub"></span></h3><div class="chartwrap"><canvas id="chLubeFuel"></canvas></div></div>
+        <div class="chartcard"><h3>Hourly Fuel Delay — This Shift <span class="sub" id="lhsub"></span></h3><div class="chartwrap"><canvas id="chLubeTrend"></canvas></div></div>
       </div>
       <div class="charts">
+        <div class="chartcard"><h3>Actual vs Expected by Reason</h3><div id="lubeReasons"></div></div>
         <div class="chartcard"><h3>Overrun Leaderboard — This Shift</h3><div id="lubeLead"></div></div>
-        <div class="chartcard" style="display:flex;flex-direction:column;gap:16px">
-          <div><h3>By Truck Class</h3><div id="lubeClass"></div></div>
-        </div>
+      </div>
+      <div class="charts">
+        <div class="chartcard"><h3>Assignment Automation</h3><div id="lubeAssignAuto"></div></div>
+        <div class="chartcard"><h3>Faulty Fuel-Level Sensors <span class="sub" id="lfssub"></span></h3><div id="lubeFaulty"></div></div>
       </div>
       <div class="foot" id="lubeNote"></div>
     </section>
@@ -3337,20 +3332,22 @@ function drawBalanceTL(tbd){
 }
 function renderLube(){
   const lu=V().lube;
-  document.getElementById('lubeNote').textContent=`${lu.n} events (this shift/view) · ${lu.shortCount} short <20s FUEL&LUBE/BREAK ignored · ${lu.faulty} faulty fuel reads (>100%) · ${lu.zero} zero/missing`;
+  const lubeNote=document.getElementById('lubeNote');
+  const lubeReasons=document.getElementById('lubeReasons');
+  const lubeLead=document.getElementById('lubeLead');
+  const lubeFaulty=document.getElementById('lubeFaulty');
+  const lubeAssignAuto=document.getElementById('lubeAssignAuto');
+  if(lubeNote) lubeNote.textContent=`${lu.n} events (this shift/view) · ${lu.shortCount} short <20s FUEL&LUBE/BREAK ignored · ${lu.faulty} faulty fuel reads (>100%) · ${lu.zero} zero/missing`;
   const m1=s=>(s/60).toFixed(1);
   let rt=`<table class="lanetab"><tr><th>Reason</th><th>Events</th><th>Actual min</th><th>Expected min</th><th>Avg min</th><th>% over</th></tr>`;
   lu.reasons.forEach(r=>rt+=`<tr><td>${r.reason}</td><td>${r.n}</td><td>${r.actual}</td><td>${r.exp}</td><td>${m1(r.avg)}</td><td>${r.over}%</td></tr>`);
-  document.getElementById('lubeReasons').innerHTML=rt+'</table>';
+  if(lubeReasons) lubeReasons.innerHTML=rt+'</table>';
   let lt=`<table class="lanetab"><tr><th>Time</th><th>Truck</th><th>Type</th><th>Reason</th><th>Act min</th><th>Exp min</th><th>Over min</th></tr>`;
   lu.leaderboard.forEach(r=>lt+=`<tr><td>${r.time}</td><td>${r.eqmt}</td><td>${r.type}</td><td>${r.reason}</td><td>${m1(r.actual)}</td><td>${m1(r.exp)}</td><td style="color:${r.over>0?'var(--red)':'var(--green)'};font-weight:700">${r.over>0?'+':''}${m1(r.over)}</td></tr>`);
-  document.getElementById('lubeLead').innerHTML=lt+'</table>';
-  let ct=`<table class="lanetab"><tr><th>Truck class</th><th>Events</th><th>Avg min</th><th>Total min</th></tr>`;
-  lu.byClass.forEach(r=>ct+=`<tr><td>${r.type}</td><td>${r.n}</td><td>${m1(r.avg)}</td><td>${r.total}</td></tr>`);
-  document.getElementById('lubeClass').innerHTML=ct+'</table>';
+  if(lubeLead) lubeLead.innerHTML=lt+'</table>';
   const fs=lu.faultySensor||[];
   const fss=document.getElementById('lfssub');
-  if(!fs.length){document.getElementById('lubeFaulty').innerHTML='<div class="foot">No faulty fuel-level reads (>100 %) this shift/view.</div>';if(fss)fss.textContent='';}
+  if(!fs.length){if(lubeFaulty) lubeFaulty.innerHTML='<div class="foot">No faulty fuel-level reads (>100 %) this shift/view.</div>';if(fss)fss.textContent='';}
   else{
     const byT={}; fs.forEach(r=>{(byT[r.type]=byT[r.type]||[]).push(r);});
     const nTrucks=fs.length,nReads=fs.reduce((a,r)=>a+r.reads,0);
@@ -3360,7 +3357,7 @@ function renderLube(){
     const types=Object.keys(byT).sort((a,b)=>{const ia=order.indexOf(a),ib=order.indexOf(b);return (ia<0?99:ia)-(ib<0?99:ib);});
     types.forEach(t=>{const g=byT[t];
       g.forEach((r,i)=>{ft+=`<tr><td>${i===0?t+' ('+g.length+')':''}</td><td>${r.eqmt}</td><td>${r.reads}</td><td style="color:var(--red);font-weight:700">${r.value} %</td></tr>`;});});
-    document.getElementById('lubeFaulty').innerHTML=ft+'</table>';
+    if(lubeFaulty) lubeFaulty.innerHTML=ft+'</table>';
   }
   // ---- assignment automation (System vs Manual) ----
   {
@@ -3375,7 +3372,7 @@ function renderLube(){
       ht+=`<tr><td colspan="5" class="foot">No fuel assignment data for this shift/view.</td></tr>`;
     }
     ht+='</table><div class="foot" style="margin-top:4px">Fuel Assignments: System vs Dispatcher (manual deduplicated to most recent per truck).</div>';
-    document.getElementById('lubeAssignAuto').innerHTML=ht;
+    if(lubeAssignAuto) lubeAssignAuto.innerHTML=ht;
   }
   if(typeof Chart==='undefined')return;
   const hy=lu.hourly, toH=a=>a.map(v=>v/60);
