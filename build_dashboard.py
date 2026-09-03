@@ -18,8 +18,9 @@ Locked definitions (agreed section-by-section):
                    Above Potential: Sched. Potential → PA → UA → OE rows (Cat 797 availability vs budget
                    CSV, same calc as KPI tab), each bar embeds the top Down/Standby/Delay reason.
 """
-import csv, json, datetime, os, re
+import csv, json, datetime, os, re, zipfile
 from collections import defaultdict
+from xml.etree import ElementTree as ET
 
 # Anchor all paths to THIS script's folder, so the project works from any working directory
 # or after being copied/moved to another computer (no dependency on the current directory).
@@ -128,6 +129,80 @@ MASTER_TRACKING_ACTION_FIELDS=[
     'mine','shiftId','intervalId','assetId','deviation','corrective','owner',
     'support','slaDl','status','rootCause','impactVal','impactUnit','dateCreated'
 ]
+SUGGESTION_FIELDS=[
+    'mine','shiftId','category','area','suggestion','benefit',
+    'owner','priority','status','dateCreated','notes'
+]
+
+def _xlsx_col_index(ref):
+    letters=''.join(ch for ch in str(ref or '') if ch.isalpha()).upper()
+    n=0
+    for ch in letters:
+        n=n*26+(ord(ch)-64)
+    return max(0,n-1)
+
+def _xlsx_cell_text(cell, ns, shared):
+    ctype=cell.attrib.get('t') or ''
+    if ctype=='inlineStr':
+        node=cell.find(f'{{{ns}}}is')
+        return ''.join(node.itertext()) if node is not None else ''
+    val=cell.find(f'{{{ns}}}v')
+    if val is None or val.text is None:
+        return ''
+    txt=str(val.text)
+    if ctype=='s':
+        try: return shared[int(txt)]
+        except Exception: return ''
+    return txt
+
+def _load_xlsx_rows(path):
+    ns='http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+    with zipfile.ZipFile(path) as zf:
+        shared=[]
+        if 'xl/sharedStrings.xml' in zf.namelist():
+            sroot=ET.fromstring(zf.read('xl/sharedStrings.xml'))
+            for si in sroot.findall(f'{{{ns}}}si'):
+                shared.append(''.join(si.itertext()))
+        root=ET.fromstring(zf.read('xl/worksheets/sheet1.xml'))
+        rows=[]
+        for row in root.findall(f'.//{{{ns}}}sheetData/{{{ns}}}row'):
+            vals=[]
+            for cell in row.findall(f'{{{ns}}}c'):
+                idx=_xlsx_col_index(cell.attrib.get('r'))
+                while len(vals)<=idx:
+                    vals.append('')
+                vals[idx]=_xlsx_cell_text(cell,ns,shared).strip()
+            rows.append(vals)
+        return rows
+
+def load_suggestions():
+    for path in [f'{DATADIR}/suggestions.xlsx', f'{DEFAULT_DATADIR}/suggestions.xlsx', f'{BASE}/suggestions.xlsx']:
+        if not os.path.exists(path):
+            continue
+        try:
+            rows=_load_xlsx_rows(path)
+            if not rows:
+                return []
+            header_idx={}
+            for i,h in enumerate(rows[0]):
+                key=str(h or '').strip().lower()
+                if key:
+                    header_idx[key]=i
+            items=[]
+            for row in rows[1:]:
+                item={}
+                has_data=False
+                for key in SUGGESTION_FIELDS:
+                    idx=header_idx.get(key.lower())
+                    val=(row[idx] if idx is not None and idx < len(row) else '').strip()
+                    item[key]=val
+                    has_data=has_data or bool(val)
+                if has_data:
+                    items.append(item)
+            return items
+        except Exception:
+            pass
+    return []
 
 def load_master_tracking_actions():
     items=[]
@@ -2739,6 +2814,13 @@ body.sb-auto .pagenav{display:flex}
       <div class="section">
         <h2>Playbook <span class="sub" id="playsub"></span></h2>
         <div id="playbookBody"></div>
+      </div>
+    </section>
+
+    <section class="page" id="pg-suggestions" hidden>
+      <div class="section">
+        <h2>Suggestions <span class="sub" id="sgsub"></span></h2>
+        <div id="suggestionsBody"></div>
       </div>
     </section>
 
@@ -5948,7 +6030,251 @@ function initPbS3ActionRegister(){
   setOpenToggleUI();
   renderList();
 }
-const TABS=[['overview','Shift Overview',0],['playbook','Playbook',0],['snapshot','Equipment Status',0],['pulse','Dispatch Settings',0],['matplace','Material Placement',0],['blend','Blend',0],['balance','Truck / Shovel Balance',0],['shovel2','Shovel Waterfall',0],['loading','Loading Drill-Down',1],['shovprod','Shovel Productivity',1],['delaysS','Delays & Standby',1],['trucks','Truck Waterfall',0],['haulage','Haulage Drill-Down',1],['truckprod','Truck Productivity',1],['delays','Delays & Standby',1],['hourlyperf','Hourly Production',0],['lube','Fuel and Lube',0],['shiftstats','Shift Stats',0],['trends','Cross-Shift Trends',0],['appendix','Appendix',0],['sandbox','Sandbox',0]];
+function renderSuggestions(){
+  const el=document.getElementById('suggestionsBody');
+  if(!el) return;
+  let h='';
+  h+=`<div style="margin:0 0 12px;font-size:13px;color:var(--muted)">Log improvement suggestions for the selected mine/shift. Seed records are loaded from <code>Data/suggestions.xlsx</code>; exported records can be reviewed in Excel.</div>`;
+  h+=`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">`;
+  h+=`<button type="button" class="tlbtn" onclick="sgResetForm()" style="padding:8px 18px;font-size:13px;background:#2f7a44;color:#fff;border:none;border-radius:6px;cursor:pointer">&#43; New Suggestion</button>`;
+  h+=`<button type="button" class="tlbtn" onclick="sgExportCsv()" style="padding:8px 18px;font-size:13px;background:#fff;color:#2f7a44;border:1px solid #2f7a44;border-radius:6px;cursor:pointer">Export Suggestions CSV</button>`;
+  h+=`<span id="sg-msg" style="font-size:12px;color:#2f7a44;display:none">&#10003; Suggestion saved.</span>`;
+  h+=`</div>`;
+  h+=`<form id="sg-form" onsubmit="sgSubmit(event)" style="padding:16px 18px;background:#fff;border:1px solid #d9dfe8;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.05)">`;
+  h+=`<div style="font-size:16px;font-weight:700;color:#2b2f36;margin-bottom:12px">Suggestion Entry Form</div>`;
+  h+=`<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:12px">`;
+  h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">Mine
+    <select name="mine" required style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px;background:#fff">
+      <option value="">— select —</option>
+      <option>MRM</option><option>JPM</option>
+    </select></label>`;
+  h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">Shift ID
+    <select name="shiftId" required style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px;background:#fff">
+      <option value="">— select —</option>
+      ${DATA.shifts.map(s=>`<option value="${s.id}">${s.id}${s.name?` · ${s.name}`:''}</option>`).join('')}
+    </select></label>`;
+  h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">Category
+    <select name="category" required style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px;background:#fff">
+      <option value="">— select —</option>
+      <option>Operations</option><option>Dispatch</option><option>Maintenance</option><option>Safety</option><option>Process Improvement</option><option>Other</option>
+    </select></label>`;
+  h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">Area / Asset
+    <input type="text" name="area" placeholder="e.g. MRM Pit, SHV-02" required style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px">
+  </label>`;
+  h+=`</div>`;
+  h+=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">`;
+  h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">Suggestion
+    <textarea name="suggestion" required rows="4" placeholder="Describe the suggestion to improve performance." style="padding:8px;border:1px solid #ccc;border-radius:6px;font-size:13px;resize:vertical"></textarea>
+  </label>`;
+  h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">Expected Benefit
+    <textarea name="benefit" rows="4" placeholder="Expected outcome, benefit or value." style="padding:8px;border:1px solid #ccc;border-radius:6px;font-size:13px;resize:vertical"></textarea>
+  </label>`;
+  h+=`</div>`;
+  h+=`<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:12px">`;
+  h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">Owner
+    <input type="text" name="owner" placeholder="Full name or role" required style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px">
+  </label>`;
+  h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">Priority
+    <select name="priority" required style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px;background:#fff">
+      <option value="">— select —</option>
+      <option>High</option><option>Medium</option><option>Low</option>
+    </select></label>`;
+  h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">Status
+    <select name="status" required style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px;background:#fff">
+      <option value="">— select —</option>
+      <option>New</option><option>Reviewed</option><option>Planned</option><option>Implemented</option><option>Deferred</option>
+    </select></label>`;
+  h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">Creation Date
+    <input type="datetime-local" name="dateCreated" required style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px">
+  </label>`;
+  h+=`</div>`;
+  h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px;margin-bottom:16px">Notes
+    <textarea name="notes" rows="3" placeholder="Optional follow-up notes." style="padding:8px;border:1px solid #ccc;border-radius:6px;font-size:13px;resize:vertical"></textarea>
+  </label>`;
+  h+=`<div style="display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap">`;
+  h+=`<button type="button" class="tlbtn" onclick="sgResetForm()" style="padding:8px 18px;font-size:13px;background:#fff;color:#5b6573;border:1px solid #cfd4dd;border-radius:6px;cursor:pointer">Clear</button>`;
+  h+=`<button id="sg-submit-btn" type="submit" class="tlbtn" style="padding:8px 22px;font-size:13px;background:#2f7a44;color:#fff;border:none;border-radius:6px;cursor:pointer">&#43; Save Suggestion</button>`;
+  h+=`</div>`;
+  h+=`</form>`;
+  h+=`<div id="sg-list" style="margin-top:14px"></div>`;
+  el.innerHTML=h;
+  initSuggestionRegister();
+}
+function initSuggestionRegister(){
+  const STORAGE_KEY='albianSuggestionItemsV1';
+  const CSV_FIELDS=__SUGGESTION_FIELDS__;
+  window._sgSeedItems=Array.isArray(__SUGGESTION_ITEMS__)?__SUGGESTION_ITEMS__:[];
+  function esc(v){
+    return String(v==null?'':v).replace(/[&<>"']/g,function(ch){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];
+    });
+  }
+  function csvEsc(v){ return '"'+String(v==null?'':v).replace(/"/g,'""')+'"'; }
+  function normalizeItem(item){
+    const out={};
+    CSV_FIELDS.forEach(function(key){ out[key]=String(item&&item[key]!=null?item[key]:'').trim(); });
+    return out;
+  }
+  function saveItems(){
+    try{localStorage.setItem(STORAGE_KEY, JSON.stringify(window._sgItems));}catch(e){}
+  }
+  function loadItems(){
+    try{
+      const raw=localStorage.getItem(STORAGE_KEY);
+      if(raw!=null){
+        const parsed=JSON.parse(raw);
+        if(Array.isArray(parsed)) return parsed.map(normalizeItem);
+      }
+    }catch(e){}
+    return window._sgSeedItems.map(normalizeItem);
+  }
+  function dtLocal(d){
+    const p=n=>String(n).padStart(2,'0');
+    return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T'+p(d.getHours())+':'+p(d.getMinutes());
+  }
+  function mineBadge(m){
+    if(!m) return '';
+    const c=m==='MRM'?'#1d6fa4':m==='JPM'?'#7b1fa2':'#555';
+    return '<span style="display:inline-block;padding:1px 7px;border-radius:8px;font-size:11px;font-weight:700;color:#fff;background:'+c+'">'+esc(m)+'</span>';
+  }
+  function statusBadge(s){
+    const c={New:'#1d6fa4',Reviewed:'#b85c00',Planned:'#7b1fa2',Implemented:'#2f7a44',Deferred:'#6b7280'};
+    return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;color:#fff;background:'+(c[s]||'#888')+'">'+esc(s||'Unknown')+'</span>';
+  }
+  function formatDt(v){
+    return esc(String(v||'').replace('T',' ')) || '—';
+  }
+  function summaryText(item){
+    return '<div style="font-weight:600;color:#2b2f36;margin-bottom:3px">'+esc(item.category||'Suggestion')+' · '+esc(item.area||'—')+'</div>'
+      +'<div style="font-size:12px;line-height:1.45">'+esc(item.suggestion||'No suggestion recorded')+'</div>'
+      +(item.benefit?'<div style="font-size:11px;color:var(--muted);margin-top:4px">Benefit: '+esc(item.benefit)+'</div>':'')
+      +(item.notes?'<div style="font-size:11px;color:var(--muted);margin-top:2px">Notes: '+esc(item.notes)+'</div>':'');
+  }
+  function setFormValues(f,item){
+    CSV_FIELDS.forEach(function(key){
+      const fld=f.elements[key];
+      if(fld) fld.value=item[key]||'';
+    });
+  }
+  function resetFormValues(){
+    const f=document.getElementById('sg-form');
+    if(!f) return;
+    f.reset();
+    if(view==='MRM'||view==='JPM'){const mSel=f.elements['mine']; if(mSel) mSel.value=view;}
+    const shSel=f.elements['shiftId']; if(shSel) shSel.value=shift||'';
+    const stSel=f.elements['status']; if(stSel) stSel.value='New';
+    const dtSel=f.elements['dateCreated']; if(dtSel) dtSel.value=dtLocal(new Date());
+    window._sgEditIdx=-1;
+    const btn=document.getElementById('sg-submit-btn');
+    if(btn) btn.textContent='+ Save Suggestion';
+  }
+  function renderList(){
+    const el=document.getElementById('sg-list');
+    if(!el) return;
+    const visItems=window._sgItems.map(function(item,i){return{item,i};}).filter(function(x){
+      const mineOk=(view==='Combined'||!x.item.mine||x.item.mine===view);
+      const shiftOk=(!shift||!x.item.shiftId||x.item.shiftId===shift);
+      return mineOk && shiftOk;
+    });
+    const scope=(view==='Combined'?'All Mines':view)+' · '+(shift||'All Shifts');
+    let t='<h3 style="margin:0 0 8px;font-size:18px;color:#2b2f36;border-bottom:2px solid #3f51b5;padding-bottom:6px">Logged Suggestions</h3>';
+    t+='<div style="margin:0 0 10px;font-size:13px;color:var(--muted)">Suggestion Register — '+esc(scope)+' ('+visItems.length+(visItems.length!==window._sgItems.length?' of '+window._sgItems.length:'')+' items)</div>';
+    if(!visItems.length){
+      el.innerHTML=t+'<div style="padding:14px 16px;border:1px dashed #cfd6e1;border-radius:10px;background:#fbfcfe;color:#6b7280">No suggestions logged for the selected view/shift yet.</div>';
+      return;
+    }
+    t+='<div style="overflow-x:auto"><table class="lanetab" style="width:100%"><thead><tr>'
+      +'<th>#</th><th>Mine</th><th>Shift ID</th><th>Suggestion</th><th>Owner</th><th>Priority</th><th>Status</th><th>Creation Date</th><th></th>'
+      +'</tr></thead><tbody>';
+    visItems.forEach(function(x,row){
+      const item=x.item, idx=x.i;
+      t+='<tr style="cursor:pointer" onclick="sgEdit('+idx+')" title="Click to edit this suggestion">'
+        +'<td style="color:var(--muted)">'+(row+1)+'</td>'
+        +'<td>'+mineBadge(item.mine)+'</td>'
+        +'<td style="white-space:nowrap;font-size:12px">'+esc(item.shiftId||'—')+'</td>'
+        +'<td>'+summaryText(item)+'</td>'
+        +'<td style="white-space:nowrap;font-size:12px">'+esc(item.owner||'—')+'</td>'
+        +'<td style="white-space:nowrap;font-size:12px">'+esc(item.priority||'—')+'</td>'
+        +'<td>'+statusBadge(item.status)+'</td>'
+        +'<td style="white-space:nowrap;font-size:12px">'+formatDt(item.dateCreated)+'</td>'
+        +'<td onclick="event.stopPropagation()"><button type="button" class="tlbtn" style="color:#c0392b" onclick="sgDelete('+idx+')">✕</button></td>'
+        +'</tr>';
+    });
+    t+='</tbody></table></div><div style="margin-top:6px;font-size:11px;color:var(--muted)">Click a row to load that suggestion back into the form for editing.</div>';
+    el.innerHTML=t;
+  }
+  if(window._sgInit){
+    renderList();
+    return;
+  }
+  window._sgInit=true;
+  window._sgItems=loadItems();
+  window._sgEditIdx=-1;
+  window.sgResetForm=function(){
+    resetFormValues();
+  };
+  window.sgEdit=function(i){
+    const item=window._sgItems[i];
+    const f=document.getElementById('sg-form');
+    if(!item||!f) return;
+    window._sgEditIdx=i;
+    setFormValues(f,item);
+    const btn=document.getElementById('sg-submit-btn');
+    if(btn) btn.textContent='✓ Save Changes';
+    f.scrollIntoView({behavior:'smooth',block:'start'});
+  };
+  window.sgDelete=function(i){
+    window._sgItems.splice(i,1);
+    saveItems();
+    resetFormValues();
+    renderList();
+  };
+  window.sgExportCsv=function(){
+    const rows=[CSV_FIELDS.join(',')].concat(window._sgItems.map(function(item){
+      return CSV_FIELDS.map(function(key){ return csvEsc(item[key]); }).join(',');
+    }));
+    const blob=new Blob([rows.join('\\n')],{type:'text/csv;charset=utf-8;'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download='suggestions.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function(){URL.revokeObjectURL(url);},0);
+  };
+  window.sgSubmit=function(e){
+    e.preventDefault();
+    const f=e.target;
+    const fd=new FormData(f);
+    const isEdit=window._sgEditIdx>=0;
+    const existingDateCreated=isEdit?(window._sgItems[window._sgEditIdx]||{}).dateCreated||'':'';
+    const nowIso=dtLocal(new Date());
+    const item=normalizeItem({
+      mine: fd.get('mine'),
+      shiftId: fd.get('shiftId'),
+      category: fd.get('category'),
+      area: fd.get('area'),
+      suggestion: fd.get('suggestion'),
+      benefit: fd.get('benefit'),
+      owner: fd.get('owner'),
+      priority: fd.get('priority'),
+      status: fd.get('status'),
+      dateCreated: fd.get('dateCreated') || existingDateCreated || nowIso,
+      notes: fd.get('notes'),
+    });
+    if(isEdit) window._sgItems[window._sgEditIdx]=item;
+    else window._sgItems.push(item);
+    saveItems();
+    const msg=document.getElementById('sg-msg');
+    if(msg){msg.style.display='inline';setTimeout(function(){msg.style.display='none';},2500);}
+    resetFormValues();
+    renderList();
+  };
+  resetFormValues();
+  renderList();
+}
+const TABS=[['overview','Shift Overview',0],['playbook','Playbook',0],['snapshot','Equipment Status',0],['pulse','Dispatch Settings',0],['matplace','Material Placement',0],['blend','Blend',0],['balance','Truck / Shovel Balance',0],['shovel2','Shovel Waterfall',0],['loading','Loading Drill-Down',1],['shovprod','Shovel Productivity',1],['delaysS','Delays & Standby',1],['trucks','Truck Waterfall',0],['haulage','Haulage Drill-Down',1],['truckprod','Truck Productivity',1],['delays','Delays & Standby',1],['hourlyperf','Hourly Production',0],['lube','Fuel and Lube',0],['shiftstats','Shift Stats',0],['trends','Cross-Shift Trends',0],['appendix','Appendix',0],['sandbox','Sandbox',0],['suggestions','Suggestions',0]];
 let tab='overview';
 let sbAuto=true;   // sidebar auto-hides (slides off-screen) by default; hover the left edge to reveal
 function applySidebar(){document.body.classList.toggle('sb-auto',sbAuto);if(!sbAuto)document.body.classList.remove('sb-show');posHideTab();}
@@ -5972,11 +6298,12 @@ function renderPageNav(){const idx=TABS.findIndex(t=>t[0]===tab);
   const pv=document.getElementById('pgPrev'),nx=document.getElementById('pgNext'),lb=document.getElementById('pgLabel');
   if(pv)pv.disabled=idx<=0; if(nx)nx.disabled=idx>=TABS.length-1;
   if(lb)lb.textContent=(idx+1)+' / '+TABS.length+' · '+(TABS[idx]?TABS[idx][1]:'');}
-function setSubs(){['wfsub','shovsub','hcsub','ansub','owsub','lanesub','dhsub','dlsub','tlsub','avsub','avsub2','dtlsub','lhsub','lusub','hitsub','shov2sub','dssub','hpsub','spsub','tpsub','sssub','tfsub','playsub','snapsub','pulsesub','pulseavgsub','blendsub'].forEach(id=>{const e=document.getElementById(id);if(e)e.textContent='('+view+')';});}
+function setSubs(){['wfsub','shovsub','hcsub','ansub','owsub','lanesub','dhsub','dlsub','tlsub','avsub','avsub2','dtlsub','lhsub','lusub','hitsub','shov2sub','dssub','hpsub','spsub','tpsub','sssub','tfsub','playsub','sgsub','snapsub','pulsesub','pulseavgsub','blendsub'].forEach(id=>{const e=document.getElementById(id);if(e)e.textContent='('+view+')';});}
 function renderTab(){
   setSubs(); renderPageNav();
   if(tab==='overview'){try{renderOverview();}catch(e){console.error(e);}}
   else if(tab==='playbook'){try{renderPlaybook();}catch(e){console.error(e);}}
+  else if(tab==='suggestions'){try{renderSuggestions();}catch(e){console.error(e);}}
   else if(tab==='snapshot'){try{renderSnapshot();}catch(e){console.error(e);}}
   else if(tab==='blend'){try{renderBlend();}catch(e){console.error(e);}}
   else if(tab==='pulse'){try{renderPulse();}catch(e){console.error(e);}}
@@ -6118,6 +6445,8 @@ window.addEventListener('resize',posHideTab);   // keep the hide tab glued to th
 HTML=HTML.replace('__PLAYBOOK_GAP_LIBRARY__', json.dumps(PLAYBOOK_GAP_LIBRARY))
 HTML=HTML.replace('__MASTER_TRACKING_ACTION_FIELDS__', json.dumps(MASTER_TRACKING_ACTION_FIELDS))
 HTML=HTML.replace('__MASTER_TRACKING_ACTIONS__', json.dumps(load_master_tracking_actions()))
+HTML=HTML.replace('__SUGGESTION_FIELDS__', json.dumps(SUGGESTION_FIELDS))
+HTML=HTML.replace('__SUGGESTION_ITEMS__', json.dumps(load_suggestions()))
 HTML=HTML.replace('__DATA__', json.dumps(out))
 # Inline Chart.js for a fully self-contained, offline / no-CDN file. Falls back to CDN if the lib is absent.
 try:
