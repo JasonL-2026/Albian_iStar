@@ -127,7 +127,7 @@ MASTER_TRACKING_ACTIONS_CSV_CANDIDATES=[
 ]
 MASTER_TRACKING_ACTION_FIELDS=[
     'mine','shiftId','intervalId','assetId','deviation','corrective','owner',
-    'support','slaDl','status','rootCause','impactVal','impactUnit','dateCreated'
+    'support','slaDl','status','statusChangedAt','rootCause','impactVal','impactUnit','dateCreated'
 ]
 SUGGESTION_FIELDS=[
     'mine','shiftId','category','area','suggestion','benefit',
@@ -5559,6 +5559,7 @@ function renderPlaybook(){
     ["","Support Resource","Text / Dropdown (Optional)","Secondary teams called to help (e.g., Maintenance, Dozers)."],
     ["Outcome","SLA Deadline","Timestamp (Interval End + 30 Mins)","The hard cutoff time before automatic escalation."],
     ["","Resolution Status","Dropdown (Open, In-Progress, Closed, Escalated)","Real-time status of the fix."],
+    ["","Status Changed At","Date/Time (auto-filled)","Timestamp when the action item's status was last updated."],
     ["","Root-Cause Code","Dropdown (Standardised list)","Used for end-of-month engineering audits."],
     ["","Final Production Impact","Numeric (Tons, Meters, or Hours)","Quantifiable result of the intervention."],
     ["","Date Created","Date/Time","Timestamp when the action was logged."],
@@ -5620,7 +5621,7 @@ function renderPlaybook(){
   </label>`;
   h+=`</div>`;
 
-  h+=`<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:12px;margin-bottom:16px">`;
+  h+=`<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr 1fr;gap:12px;margin-bottom:16px">`;
   h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">Date Created
     <input type="datetime-local" name="dateCreated" required style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px">
   </label>`;
@@ -5632,6 +5633,9 @@ function renderPlaybook(){
       <option value="">— select —</option>
       <option>Open</option><option>In-Progress</option><option>Closed</option><option>Escalated</option>
     </select></label>`;
+  h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">Status Changed At <span style="font-weight:400;color:#888">(Auto)</span>
+    <input type="datetime-local" name="statusChangedAt" readonly style="padding:6px 8px;border:1px solid #d8dee8;border-radius:6px;font-size:13px;background:#f7f9fc;color:#5b6573">
+  </label>`;
   h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">Root-Cause Code <span style="font-weight:400;color:#888">(Outcome)</span>
     <select name="rootCause" required style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px;background:#fff">
       <option value="">— select —</option>
@@ -5842,6 +5846,7 @@ function initPbS3ActionRegister(){
       support:inferSupport(rec.tab),
       slaDl:nextSla(now),
       status:'Open',
+      statusChangedAt:dtLocal(now),
       rootCause:inferRootCause(rec.tab),
       impactVal:parseImpact(rec.tonnes_at_risk),
       impactUnit:'Tons',
@@ -5877,7 +5882,7 @@ function initPbS3ActionRegister(){
       return;
     }
     t+='<div style="overflow-x:auto"><table class="lanetab" style="width:100%"><thead><tr>'
-      +'<th>#</th><th>Mine</th><th>Shift ID</th><th>Action Summary</th><th>Ownership</th><th>Status</th><th>SLA Deadline</th><th>Date Created</th><th></th>'
+      +'<th>#</th><th>Mine</th><th>Shift ID</th><th>Action Summary</th><th>Ownership</th><th>Status</th><th>Status Changed</th><th>SLA Deadline</th><th>Date Created</th><th></th>'
       +'</tr></thead><tbody>';
     visItems.forEach(function(x,row){
       const item=x.item, origIdx=x.i;
@@ -5890,6 +5895,7 @@ function initPbS3ActionRegister(){
         +'<td><div style="font-weight:600;color:#2b2f36;margin-bottom:2px">'+esc(item.assetId||'Unassigned asset')+'</div><div style="font-size:12px;line-height:1.45">'+esc(summaryText(item))+'</div><div style="font-size:11px;color:var(--muted);margin-top:4px">Root cause: '+esc(item.rootCause||'—')+' · Impact: '+esc(item.impactVal?(item.impactVal+' '+(item.impactUnit||'')):'—')+'</div></td>'
         +'<td>'+ownerBlock+'</td>'
         +'<td>'+statusBadge(item.status)+'</td>'
+        +'<td style="white-space:nowrap;font-size:12px">'+formatSla(item.statusChangedAt)+'</td>'
         +'<td style="white-space:nowrap;font-size:12px">'+formatSla(item.slaDl)+'</td>'
         +'<td style="white-space:nowrap;font-size:12px">'+formatSla(item.dateCreated)+'</td>'
         +'<td onclick="event.stopPropagation()"><button type="button" class="tlbtn" style="color:#c0392b" onclick="pbS3Delete('+origIdx+')">✕</button></td>'
@@ -5931,6 +5937,7 @@ function initPbS3ActionRegister(){
       if(view==='MRM'||view==='JPM'){const mSel=f.elements['mine'];if(mSel)mSel.value=view;}
       const shSel=f.elements['shiftId']; if(shSel) shSel.value=shift||'';
       const dtSel=f.elements['dateCreated']; if(dtSel) dtSel.value=dtLocal(new Date());
+      const scSel=f.elements['statusChangedAt']; if(scSel) scSel.value='';
       const ov=f.elements['deviationOverride']; if(ov) ov.value='';
     }
     const modal=document.getElementById('pb-s3-modal');
@@ -5988,8 +5995,15 @@ function initPbS3ActionRegister(){
     const f=e.target;
     const fd=new FormData(f);
     const isEdit=window._pbS3EditIdx>=0;
-    const existingDateCreated=isEdit?(window._pbS3Items[window._pbS3EditIdx]||{}).dateCreated||'':'';
+    const existingItem=isEdit?(window._pbS3Items[window._pbS3EditIdx]||{}):{};
+    const existingDateCreated=isEdit?(existingItem.dateCreated||''):'';
+    const existingStatus=isEdit?(existingItem.status||''):'';
+    const existingStatusChangedAt=isEdit?(existingItem.statusChangedAt||''):'';
     const nowIso=(function(){const d=new Date();const pad=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());})();
+    const newStatus=String(fd.get('status')||'').trim();
+    const statusChangedAt=isEdit
+      ? (newStatus && newStatus!==String(existingStatus||'').trim() ? nowIso : (existingStatusChangedAt || nowIso))
+      : nowIso;
     const newItem=normalizeItem({
       mine:        fd.get('mine'),
       shiftId:     fd.get('shiftId'),
@@ -6000,7 +6014,8 @@ function initPbS3ActionRegister(){
       owner:       fd.get('owner'),
       support:     fd.get('support'),
       slaDl:       fd.get('slaDl'),
-      status:      fd.get('status'),
+      status:      newStatus,
+      statusChangedAt: statusChangedAt,
       rootCause:   fd.get('rootCause'),
       impactVal:   fd.get('impactVal'),
       impactUnit:  fd.get('impactUnit'),
