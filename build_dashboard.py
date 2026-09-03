@@ -2728,31 +2728,6 @@ body.sb-auto .pagenav{display:flex}
         <div class="foot" style="margin-bottom:8px"><b>Shovel-centric</b> — three-column material flow: <b>Previous Dump</b> → <b>Shovel</b> (loading point) → <b>Dump</b> (destination). The <b>shovel is the 0 km anchor</b>: left ribbons stretch with the <b>empty-haul</b> distance (prev dump → shovel), right ribbons with the <b>full-haul</b> distance (shovel → dump). Ribbon <b>width ∝ tonnage</b>. Hover a ribbon for details.</div>
         <div id="hc2"></div>
         <div class="badges" id="hcleg2"></div>
-        <div style="border-top:1px solid var(--line);margin:22px 0 10px"></div>
-        <h3 style="margin:0 0 2px">Dump-centric view</h3>
-        <div class="foot" style="margin-bottom:8px"><b>Dump-centric</b> — the same loads re-anchored on the <b>dump location (0 km)</b>: <b>Shovel</b> (full-haul in) → <b>Dump</b> → <b>Next Shovel</b> (empty-haul out). Left ribbons stretch with the <b>full-haul</b> distance into the dump, right ribbons with the <b>empty-haul</b> distance to wherever the truck heads next. Same width ∝ tonnage and per-path lengths.</div>
-        <div id="hc3"></div>
-        <div class="badges" id="hcleg3"></div>
-        <div style="border-top:1px solid var(--line);margin:22px 0 10px"></div>
-        <h3 style="margin:0 0 2px">Dump-centric — simple</h3>
-        <div class="foot" style="margin-bottom:8px"><b>Simple dump-centric</b> — identical to the dump-centric view above (<b>Shovel</b> full-haul in → <b>Dump</b> → <b>Next Shovel</b> empty-haul out), keeping <b>full &amp; empty haul tonnage</b>, <b>% locked</b> labels and locked-load hatching. The <b>only</b> difference: haul distance is <b>not</b> encoded — nodes sit in evenly-spaced columns and ribbon width still ∝ tonnage.</div>
-        <div id="hcSimple"></div>
-        <div class="badges" id="hclegSimple"></div>
-        <div style="border-top:1px solid var(--line);margin:22px 0 10px"></div>
-        <h3 style="margin:0 0 2px">Cycle map <span class="sub" style="font-weight:400;color:var(--muted)" id="hcmapsrc"></span></h3>
-        <div class="foot" style="margin-bottom:8px"><b>Spatial map</b> — each <b>shovel</b> (blue) and <b>dump location</b> (ore/waste colour) is a circle placed by its <b>x/y position</b>, sized by tonnes. <b>Loaded hauls</b> (shovel → dump) are solid coloured arcs; <b>empty returns</b> (dump → next shovel) are faint dashed arcs — arrowheads show the cycle direction. Circle spacing is to scale in km.</div>
-        <div style="margin:2px 0 6px">
-          <button class="owbtn on" id="cmBase" onclick="cmToggle('base',this)" style="display:none">Basemap</button>
-          <button class="owbtn on" id="cmRoad" onclick="cmToggle('road',this)" style="display:none">Haul roads</button>
-          <button class="owbtn on" id="cmSnap" onclick="cmToggle('snap',this)" style="display:none">Snap flows to roads</button>
-          <button class="owbtn on" id="cmLoaded" onclick="cmToggle('loaded',this)">Loaded hauls</button>
-          <button class="owbtn on" id="cmEmpty" onclick="cmToggle('empty',this)">Empty returns</button>
-          <button class="owbtn" id="cmHi" onclick="cmToggle('hi',this)">Highlight longest empties</button>
-          <button class="owbtn" id="cmTbl" onclick="cmToggle('tbl',this)">Longest-empty table</button>
-        </div>
-        <div id="hc4"></div>
-        <div id="hc4tbl"></div>
-        <div class="badges" id="hcleg4"></div>
       </div>
     </section>
 
@@ -4993,18 +4968,13 @@ function renderCycleMap(){
 }
 function cmToggle(k,btn){cmOpt[k]=!cmOpt[k]; if(btn)btn.classList.toggle('on',cmOpt[k]); renderCycleMap();}
 function renderMatPlace(){   // Material Placement Sankey (its own tab) — SVG, renders even without Chart.js
-  document.getElementById('hcsub2').textContent='('+view+')';
-  document.getElementById('hc2').innerHTML=drawTruckFlow(V().haulCycles,'shovel');
+  const hcsub2=document.getElementById('hcsub2');
+  const hc2=document.getElementById('hc2');
+  const hcleg2=document.getElementById('hcleg2');
+  if(hcsub2) hcsub2.textContent='('+view+')';
+  if(hc2) hc2.innerHTML=drawTruckFlow(V().haulCycles,'shovel');
   const legTxt=anchor=>`<span class="badge"><b style="color:${CORE}">■</b> ore</span><span class="badge"><b style="color:${CWASTE}">■</b> waste</span><span class="badge">▨ hatched = locked (un-optimized) loads · % under nodes</span><span class="badge">ribbon width ∝ tonnage · <b>each ribbon's length is its own haul distance to scale</b> (${anchor} = 0 km — see the ruler). Each node stays a single bar whose <b>width spans that node's range of path distances</b>.</span>`;
-  document.getElementById('hcleg2').innerHTML=legTxt('shovel');
-  document.getElementById('hc3').innerHTML=drawTruckFlow(V().haulCycles,'dump');
-  document.getElementById('hcleg3').innerHTML=legTxt('dump');
-  document.getElementById('hcSimple').innerHTML=drawTruckFlow(V().haulCycles,'dump',true);
-  document.getElementById('hclegSimple').innerHTML=`<span class="badge"><b style="color:${CORE}">■</b> ore</span><span class="badge"><b style="color:${CWASTE}">■</b> waste</span><span class="badge">▨ hatched = locked (un-optimized) loads · % under nodes</span><span class="badge">same dump-centric layout — full-haul tonnage (shovel→dump) + empty-haul tonnage (dump→next shovel) + % locked all retained · ribbon width ∝ tonnage · <b>haul distance NOT encoded</b> (even columns).</span>`;
-  // ---- cycle map (spatial) ----
-  renderCycleMap();
-  const roadBadge=(DATA.roadCells&&DATA.roadCells.length)?`<span class="badge"><b style="color:#8a8f98">▪</b> haul roads (truck-trace density)</span>`:'';
-  document.getElementById('hcleg4').innerHTML=`<span class="badge"><b style="color:#2f6f9f">●</b> shovel</span><span class="badge"><b style="color:${CORE}">●</b> ore dump</span><span class="badge"><b style="color:${CWASTE}">●</b> waste dump</span><span class="badge">circle size ∝ tonnes</span><span class="badge"><b style="color:${CORE}">—</b> loaded haul (shovel → dump)</span><span class="badge"><b style="color:#9aa6b5">- -</b> empty return (dump → next shovel)</span><span class="badge"><b style="color:#d1495b">- -</b> longest empties (when highlighted)</span>${roadBadge}<span class="badge">arrowheads show cycle direction · spacing to scale in km</span>`;
+  if(hcleg2) hcleg2.innerHTML=legTxt('shovel');
 }
 function recalcHourTargets(ci){   // cumulative target lines counting only the currently-visible components
   const ds=ci.data.datasets,n=(ds[0].data||[]).length,vis=k=>ci.isDatasetVisible(k);
