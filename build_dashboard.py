@@ -2917,16 +2917,16 @@ body.sb-auto .pagenav{display:flex}
 
     <section class="page" id="pg-lube" hidden>
       <div class="charts">
-        <div class="chartcard"><h3>Fuel Level at Refuel <span class="sub" id="lusub"></span></h3><div class="chartwrap"><canvas id="chLubeFuel"></canvas></div></div>
-        <div class="chartcard"><h3>Hourly Fuel Delay — This Shift <span class="sub" id="lhsub"></span></h3><div class="chartwrap"><canvas id="chLubeTrend"></canvas></div></div>
-      </div>
-      <div class="charts">
-        <div class="chartcard"><h3>Actual vs Expected by Reason</h3><div id="lubeReasons"></div></div>
-        <div class="chartcard"><h3>Overrun Leaderboard — This Shift</h3><div id="lubeLead"></div></div>
-      </div>
-      <div class="charts">
-        <div class="chartcard"><h3>Assignment Automation</h3><div id="lubeAssignAuto"></div></div>
-        <div class="chartcard"><h3>Faulty Fuel-Level Sensors <span class="sub" id="lfssub"></span></h3><div id="lubeFaulty"></div></div>
+        <div class="chartcard" style="display:flex;flex-direction:column;gap:14px">
+          <div><h3>Fuel Level at Refuel <span class="sub" id="lusub"></span></h3><div class="chartwrap" style="height:312px"><canvas id="chLubeFuel"></canvas></div></div>
+          <div><h3>Assignment Automation</h3><div id="lubeAssignAuto"></div></div>
+          <div><h3>Faulty Fuel-Level Sensors <span class="sub" id="lfssub"></span></h3><div id="lubeFaulty"></div></div>
+        </div>
+        <div class="chartcard" style="display:flex;flex-direction:column;gap:14px">
+          <div><h3>Hourly Fuel Delay — This Shift <span class="sub" id="lhsub"></span></h3><div class="chartwrap" style="height:312px"><canvas id="chLubeTrend"></canvas></div></div>
+          <div><h3>Actual vs Expected by Reason</h3><div id="lubeReasons"></div></div>
+          <div><h3>Overrun Leaderboard — This Shift</h3><div id="lubeLead"></div></div>
+        </div>
       </div>
       <div class="foot" id="lubeNote"></div>
     </section>
