@@ -2421,7 +2421,7 @@ for sid in byShift:
 
 # ============================ HTML ============================
 HTML = r'''<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="300">
 <title>Albian Mine - Haulage Dashboard</title>
 <style>
 :root{--bg:#eef0f4;--card:#fff;--ink:#2b2f36;--muted:#7c828c;--line:#e3e6ec;
@@ -6442,6 +6442,15 @@ applySidebar();
 initSidebarHover();
 window.addEventListener('hashchange',()=>{loadState();renderAll();applySidebar();});   // back/forward + edited deep-links
 window.addEventListener('resize',posHideTab);   // keep the hide tab glued to the sidebar's right edge
+setTimeout(()=>{
+  try{
+    const u=new URL(window.location.href);
+    u.searchParams.set('_refresh', String(Date.now()));
+    window.location.replace(u.toString());
+  }catch(e){
+    window.location.reload();
+  }
+},300000);   // auto-refresh every 5 minutes so the page picks up the latest generated HTML
 </script></body></html>'''
 HTML=HTML.replace('__PLAYBOOK_GAP_LIBRARY__', json.dumps(PLAYBOOK_GAP_LIBRARY))
 HTML=HTML.replace('__MASTER_TRACKING_ACTION_FIELDS__', json.dumps(MASTER_TRACKING_ACTION_FIELDS))
