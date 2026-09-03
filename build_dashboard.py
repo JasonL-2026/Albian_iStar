@@ -2758,14 +2758,8 @@ body.sb-auto .pagenav{display:flex}
 
     <section class="page" id="pg-balance">
       <div class="section">
-        <h2>Truck Balance — Over the Shift <span class="sub" id="btlsub"></span></h2>
-        <div style="margin:-2px 0 6px;font-size:12px;color:var(--muted)">Per-hour equipment #:
-          <button class="owbtn on opModeBtn" onclick="toggleOpMode()">Showing: by GOH</button></div>
-        <div id="balanceTL"></div>
-      </div>
-      <div class="section">
-        <h2>Hang/Queue Time - Over the Shift <span class="sub" id="whsub"></span></h2>
-        <div id="waitTL"></div>
+        <h2>Truck / Shovel Balance</h2>
+        <div class="foot">The Truck Balance and Hang/Queue graphs were removed from this build.</div>
       </div>
     </section>
 
@@ -3643,10 +3637,14 @@ function renderSandbox(){
 }
 function renderCards(){
   const v=V();
-  document.getElementById('btlsub').textContent='('+view+')';
-  document.getElementById('balanceTL').innerHTML=drawFleetTimeline(v.fleetMatch,v.truckBalance,false);
-  document.getElementById('whsub').textContent='('+view+')';
-  document.getElementById('waitTL').innerHTML=drawWaitBalanceTL(v.fleetMatch,v.truckBalance);
+  const btlsub=document.getElementById('btlsub');
+  const balanceTL=document.getElementById('balanceTL');
+  const whsub=document.getElementById('whsub');
+  const waitTL=document.getElementById('waitTL');
+  if(btlsub) btlsub.textContent='('+view+')';
+  if(balanceTL) balanceTL.innerHTML=drawFleetTimeline(v.fleetMatch,v.truckBalance,false);
+  if(whsub) whsub.textContent='('+view+')';
+  if(waitTL) waitTL.innerHTML=drawWaitBalanceTL(v.fleetMatch,v.truckBalance);
 }
 function renderScoreCards(){
   const v=V();
