@@ -4854,6 +4854,15 @@ function renderTrends(){
   mk('chTrMatch',{type:'line',data:{labels,datasets:[line('Truck Match',match,'#7a4fd0')]},
     options:baseOpt({y:{ticks:{...F10}}})});
 }
+// ---- road-network routing for the Cycle Map: A* over the truck-trace grid so flow ribbons follow real roads ----
+let _cmNet=null, _cmRouteCache={};
+function _cmBuildNet(){
+  if(_cmNet)return _cmNet;
+  const RC=(typeof DATA!=='undefined'&&DATA.roadCells)||[], CELL=(DATA&&DATA.roadCell)||20, MUL=1e7;
+  const occ=new Map();
+  for(const c of RC){const gx=Math.round(c[0]/CELL-0.5),gy=Math.round(c[1]/CELL-0.5);occ.set(gx*MUL+gy,c[2]);}
+  _cmNet={occ,CELL,MUL}; return _cmNet;
+}
 function _cmSnap(net,nx,ny){const {occ,CELL,MUL}=net;const gx0=Math.round(nx/CELL-0.5),gy0=Math.round(ny/CELL-0.5);
   let best=null,bd=1e18;
   for(let r=0;r<=12;r++){for(let dx=-r;dx<=r;dx++)for(let dy=-r;dy<=r;dy++){if(Math.max(Math.abs(dx),Math.abs(dy))!==r)continue;
@@ -5007,267 +5016,6 @@ function drawCycleMap(d,opt){
     base=`<image href="${BM.img}" xlink:href="${BM.img}" x="${ox.toFixed(1)}" y="${oy.toFixed(1)}" width="${iw.toFixed(1)}" height="${ih.toFixed(1)}" preserveAspectRatio="none" opacity="0.95"/>`;}
   return `<svg viewBox="0 0 ${W} ${Hh}" width="100%" xmlns:xlink="http://www.w3.org/1999/xlink">${base}${road}${eEmpty}${eFull}${nod}${bar}</svg>`;
 }
-function renderTruckFlow(){
-  const d=V().haulCycles;
-  document.getElementById('tfsub').textContent='('+view+')';
-  document.getElementById('tf').innerHTML=drawTruckFlow(d);
-  document.getElementById('tfleg').innerHTML=
-    `<span class="badge"><b style="color:${CORE}">■</b> ore</span>`+
-    `<span class="badge"><b style="color:${CWASTE}">■</b> waste</span>`+
-    `<span class="badge">▨ hatched = locked (un-optimized) loads · % under shovel/dump nodes</span>`+
-    `<span class="badge">left: prev dump + tonnes arriving · centre: shovel + TPNOH (t/h) · right: dump + total tonnes · ribbon ∝ tonnage · km = actual/expected haul dist</span>`;
-}
-const CHARTS={};
-let hourSel=null;   // selected hour in the Shift Overview hourly chart (index into hourlyPerf)
-function renderHourDetail(i){
-  const hp=V().hourlyPerf, el=document.getElementById('hourDetail'); if(!el)return;
-  hourSel=(i==null?null:i);
-  if(!hp||i==null){el.innerHTML='<div class="hdhint">Click an hour (bar or axis) to see its hourly performance.</div>';return;}
-  const fmtV=(v,u)=>v==null?'—':(u==='mmss'?fmtTime(v):(u==='#'?v:fmt(v)));
-  const st=(hp.hours&&hp.hours[i]!=null)?hp.hours[i]:('Hour '+(i+1));
-  let en=(hp.hours&&hp.hours[i+1])||''; if(!en){const m=/^(\d+):/.exec(st); if(m)en=String((parseInt(m[1],10)+1)%24).toString().padStart(2,'0')+':00';}
-  const fmtD=(d,u)=>{const s=d>0?'+':(d<0?'−':'');const a=Math.abs(d);return s+(u==='mmss'?fmtTime(a):(u==='#'?a:fmt(a)));};
-  // fixed KPI order + short display names for the detail panel (match by prefix to be robust to the em-dash in "Payload — CAT 797")
-  const HDORDER=[['Load Count','Loads'],['Payload','Payload'],['Dumped','Tonnes'],['Ore Moved','Ore Tonnes'],['Cycle Time - Ore','Cycle Ore'],['Waste Moved','Waste Tonnes'],['Cycle Time - Waste','Cycle Waste'],['Shovel Hang','Hang'],['Spot at Shovel','Spot'],['Load Time','Load'],['Wait at Dump','Dump Idle'],['Dumping Time','Dump Time']];
-  const findRow=lbl=>hp.rows.find(r=>r.label===lbl)||hp.rows.find(r=>r.label.indexOf(lbl)===0);
-  let s=`<div class="hdhd">${en?st+' – '+en:st}</div><div class="hdrow hdhead"><span>KPI</span><span>Act</span><span>Δ</span></div>`;
-  HDORDER.forEach(([lbl,disp])=>{const r=findRow(lbl); if(!r)return; const v=r.vals?r.vals[i]:null, has=(v!=null&&r.good&&r.budget);
-    let bg='transparent',chip='',dcol='var(--muted)';   // green ▲ = better than target · red ▼ = worse
-    if(has){const d=v-r.budget,dev=d/r.budget,better=r.good==='high'?dev>=0:dev<=0,op=Math.min(0.5,Math.abs(dev)*1.3).toFixed(2);
-      bg=better?`rgba(106,168,79,${op})`:`rgba(204,75,75,${op})`; dcol=better?'#2f7a44':'#b3382b'; chip=`${better?'▲':'▼'} ${fmtD(d,r.uom)}`;}
-    s+=`<div class="hdrow" title="${disp}"><span>${disp}</span><span class="hdv" style="background:${bg}">${fmtV(v,r.uom)}</span><span class="hdd" style="color:${dcol}">${chip}</span></div>`;});
-  el.innerHTML=s;
-  if(CHARTS.chHour)CHARTS.chHour.update('none');   // recolour bars (selected = opaque)
-}
-let hourDetOn=false;   // hourly detail panel hidden by default; the "Details" toggle shows it
-function applyHourDet(){
-  const p=document.getElementById('hourDetail'), b=document.getElementById('hourDetBtn');
-  if(p)p.classList.toggle('hidden',!hourDetOn);
-  if(b)b.classList.toggle('on',hourDetOn);
-  if(CHARTS.chHour)CHARTS.chHour.resize();
-}
-function toggleHourDet(){hourDetOn=!hourDetOn;applyHourDet();}
-function mk(id,cfg){if(CHARTS[id]){CHARTS[id].destroy();}const el=document.getElementById(id);if(el)CHARTS[id]=new Chart(el,cfg);}
-const TLCOL={Ready:'#4caf50',Delay:'#ffc107',Down:'#e23b32',Standby:'#3f7fe0',Parked:'#9c6ade',Other:'#b0bec5'};
-function drawTimeline(tl,opt){
-  opt=opt||{};
-  const eq=tl.equip;if(!eq.length)return '<div class="foot">No status events.</div>';
-  const rowH=opt.rowH||24, lf=opt.labelFont||10, showSub=(opt.compact!==true);   // compact = thin rows (truck timeline)
-  const W=900,top=22,left=150,plotW=W-left-16,H=top+eq.length*rowH+16,TOT=720;
-  const X=m=>left+m/TOT*plotW;let g='';
-  const Q=tl.queue||{},qmax=tl.qmax||1,MM=tl.mat||{};
-  const tlbase=(tl.base!=null?tl.base:6);
-  const plotBot=top+eq.length*rowH;
-  for(let hh=0;hh<=12;hh++){const x=X(hh*60);   // solid vertical gridline + time label every hour (matches Hourly tonnes chart)
-    g+=`<line x1="${x}" y1="${top}" x2="${x}" y2="${plotBot}" stroke="var(--line)" stroke-width="0.7"/>`;
-    g+=`<text x="${x}" y="${top-5}" text-anchor="middle" font-size="9" fill="var(--muted)">${String((tlbase+hh)%24).padStart(2,'0')}:00</text>`;}
-  for(let i=0;i<=eq.length;i++){const y=top+i*rowH;g+=`<line x1="${left}" y1="${y}" x2="${left+plotW}" y2="${y}" stroke="#eef0f4" stroke-width="0.5"/>`;}   // horizontal row separators
-  const barPad=rowH>=16?2:1, barH=Math.max(2,rowH-barPad*2);
-  eq.forEach((k,i)=>{const y=top+i*rowH;const mc=MM[k]==='Waste'?'#d08a1f':(MM[k]==='Ore'?'#1f9e8b':'var(--ink)');
-    g+=`<text x="${left-6}" y="${y+rowH/2+lf*0.34}" text-anchor="end" font-size="${lf}" font-weight="600" fill="${mc}">${k}</text>`;
-    if(showSub){const aq=tl.avgq?tl.avgq[k]:null, ah=tl.avgh?tl.avgh[k]:null, parts=[];
-      if(aq!=null)parts.push('queue '+aq); if(ah!=null)parts.push('hang '+ah);
-      if(parts.length) g+=`<text x="${left-6}" y="${y+rowH/2+10}" text-anchor="end" font-size="8" fill="var(--muted)">${parts.join(' · ')} min/load</text>`;}
-    tl.seg[k].forEach(s=>{const x=X(s[0]),w=Math.max(0.4,s[1]/TOT*plotW);g+=`<rect x="${x}" y="${y+barPad}" width="${w}" height="${barH}" fill="${TLCOL[s[2]]||'#ccc'}"><title>${k} · ${s[3]||s[2]} · ${s[1]} min</title></rect>`;});
-    const qs=Q[k];
-    if(showSub&&qs&&qs.length){const yb=y+rowH-3,ht=rowH-6,yq=v=>yb-v/qmax*ht;
-      let d='';qs.forEach((p,j)=>{const x=X(p[0]);d+=(j===0?`M${x} ${yq(p[1])}`:` L${x} ${yq(qs[j-1][1])} L${x} ${yq(p[1])}`);});
-      d+=` L${X(TOT)} ${yq(qs[qs.length-1][1])}`;
-      g+=`<path d="${d}" fill="none" stroke="#fff" stroke-width="2.6" stroke-opacity="0.55"/><path d="${d}" fill="none" stroke="#111" stroke-width="1.3"/>`;}});
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%">${g}</svg><div class="badges" style="margin-top:6px">`+
-    Object.entries(TLCOL).map(([k,c])=>`<span class="badge"><b style="color:${c}">■</b> ${k}</span>`).join('')+
-    `<span class="badge">— black line: trucks at shovel (0–${qmax})</span><span class="badge">label colour = ore/waste</span></div>`;
-}
-function drawDumpTimeline(tl){
-  const eq=tl.equip;if(!eq||!eq.length)return '<div class="foot">No trucks-at-dump data for this view.</div>';
-  const W=900,rowH=140,top=30,left=46,plotW=W-left-18,gap=36,TOT=720;
-  const qmax=Math.max(1,tl.qmax||1),stepC=qmax<=8?1:Math.ceil(qmax/8);
-  const H=top+eq.length*(rowH+gap)-gap+18;
-  const X=m=>left+m/TOT*plotW,base=tl.base!=null?tl.base:6;let g='';
-  for(let hh=0;hh<=12;hh+=2){const x=X(hh*60);g+=`<text x="${x}" y="${top-12}" text-anchor="middle" font-size="9.5" fill="var(--muted)">${(base+hh)%24}:00</text>`;}
-  eq.forEach((k,i)=>{const y=top+i*(rowH+gap),yb=y+rowH,yq=v=>yb-v/qmax*rowH;
-    // horizontal guide lines at each truck count + labels
-    for(let c=0;c<=qmax;c+=stepC){const gy=yq(c);
-      g+=`<line x1="${left}" y1="${gy}" x2="${left+plotW}" y2="${gy}" stroke="${c===0?'#aab2c0':'#e6e9f0'}" stroke-width="${c===0?1:0.7}"${c===0?'':' stroke-dasharray="3 3"'}/>`;
-      g+=`<text x="${left-5}" y="${gy+3}" text-anchor="end" font-size="9" fill="var(--muted)">${c}</text>`;}
-    // vertical hour lines within the band
-    for(let hh=0;hh<=12;hh+=2){const x=X(hh*60);g+=`<line x1="${x}" y1="${y}" x2="${x}" y2="${yb}" stroke="var(--line)" stroke-width="0.5"/>`;}
-    // labels
-    g+=`<text x="${left}" y="${y-7}" font-size="12" font-weight="700" fill="var(--ink)">${shortId(k)}</text>`;
-    const aq=tl.avgq?tl.avgq[k]:null;
-    if(aq!=null) g+=`<text x="${left+plotW}" y="${y-7}" text-anchor="end" font-size="9.5" fill="var(--muted)">avg queue ${aq} min/load</text>`;
-    g+=`<text x="13" y="${y+rowH/2}" transform="rotate(-90 13 ${y+rowH/2})" text-anchor="middle" font-size="9" fill="var(--muted)">trucks</text>`;
-    const qs=tl.seg[k];
-    if(qs&&qs.length){
-      let d='';qs.forEach((p,j)=>{const x=X(p[0]);d+=(j===0?`M${x} ${yq(p[1])}`:` L${x} ${yq(qs[j-1][1])} L${x} ${yq(p[1])}`);});
-      d+=` L${X(TOT)} ${yq(qs[qs.length-1][1])}`;
-      g+=`<path d="${d}" fill="none" stroke="#fff" stroke-width="3" stroke-opacity="0.6"/><path d="${d}" fill="none" stroke="#3f51b5" stroke-width="1.9"/>`;}
-    // crusher status strip at the base of the band (colour = ASEStatus)
-    const cs=tl.status?tl.status[k]:null,sy=yb+4,shH=9;
-    g+=`<text x="${left-5}" y="${sy+shH/2+2.5}" text-anchor="end" font-size="7.5" fill="var(--muted)">status</text>`;
-    if(cs&&cs.length) cs.forEach(s=>{const x=X(s[0]),w=Math.max(0.5,s[1]/TOT*plotW);
-      g+=`<rect x="${x}" y="${sy}" width="${w}" height="${shH}" fill="${TLCOL[s[2]]||'#ccc'}"><title>${k} · ${s[3]||s[2]} · ${s[1]} min</title></rect>`;});
-    else g+=`<rect x="${left}" y="${sy}" width="${plotW}" height="${shH}" fill="#eef0f4"/><text x="${left+plotW/2}" y="${sy+shH/2+3}" text-anchor="middle" font-size="7.5" fill="var(--muted)">no crusher status</text>`;});
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%">${g}</svg><div class="badges" style="margin-top:6px"><span class="badge"><b style="color:#3f51b5">—</b> trucks at dump</span><span class="badge">thin guides = truck count (0–${qmax})</span>`+
-    `<span class="badge">base strip = crusher status (where available):</span>`+
-    Object.entries(TLCOL).map(([k,c])=>`<span class="badge"><b style="color:${c}">■</b> ${k}</span>`).join('')+`</div>`;
-}
-function drawShovelBand(tl,k){
-  // Single-shovel status timeline as a tall band (trucks-at-shovel line + status strip at base), like the trucks-at-dump graph.
-  if(!tl||!tl.seg||!(k in tl.seg)) return '<div class="foot">No status-timeline data for '+k+' this shift/view.</div>';
-  const W=940,rowH=122,top=30,left=46,plotW=W-left-58,TOT=720;
-  const qmax=Math.max(1,tl.qmax||1),stepC=qmax<=8?1:Math.ceil(qmax/8);
-  const X=m=>left+m/TOT*plotW,base=tl.base!=null?tl.base:6,yb=top+rowH,yq=v=>yb-v/qmax*rowH;
-  const bandTop=yb+4+11+18, bandH=112, bandMid=bandTop+bandH/2, bandBot=bandTop+bandH, H=bandBot+12;   // status strip, then a per-load hang/queue band (y-axis ±14 min)
-  let g='';
-  for(let hh=0;hh<=12;hh++){const x=X(hh*60);g+=`<text x="${x}" y="${top-12}" text-anchor="middle" font-size="9.5" fill="var(--muted)">${(base+hh)%24}:00</text>`;}
-  for(let c=0;c<=qmax;c+=stepC){const gy=yq(c);
-    g+=`<line x1="${left}" y1="${gy}" x2="${left+plotW}" y2="${gy}" stroke="${c===0?'#aab2c0':'#e6e9f0'}" stroke-width="${c===0?1:0.7}"${c===0?'':' stroke-dasharray="3 3"'}/>`;
-    g+=`<text x="${left-5}" y="${gy+3}" text-anchor="end" font-size="9" fill="var(--muted)">${c}</text>`;}
-  for(let hh=0;hh<=12;hh++){const x=X(hh*60);g+=`<line x1="${x}" y1="${top}" x2="${x}" y2="${yb}" stroke="#e8ebf0" stroke-width="0.9"/>`;}
-  const aq=tl.avgq?tl.avgq[k]:null, ah=tl.avgh?tl.avgh[k]:null, parts=[];
-  if(ah!=null)parts.push('hang '+ah); if(aq!=null)parts.push('queue '+aq);   // shown in the band's top-right corner below
-  g+=`<text x="13" y="${top+rowH/2}" transform="rotate(-90 13 ${top+rowH/2})" text-anchor="middle" font-size="9" fill="var(--muted)">trucks at shovel</text>`;
-  const qs=tl.queue?tl.queue[k]:null;
-  if(qs&&qs.length){let d='';qs.forEach((p,j)=>{const x=X(p[0]);d+=(j===0?`M${x} ${yq(p[1])}`:` L${x} ${yq(qs[j-1][1])} L${x} ${yq(p[1])}`);});
-    d+=` L${X(TOT)} ${yq(qs[qs.length-1][1])}`;
-    g+=`<path d="${d}" fill="none" stroke="#fff" stroke-width="3" stroke-opacity="0.6"/><path d="${d}" fill="none" stroke="#111" stroke-width="1.7"/>`;}
-  // Total-tonnes trend overlay (right axis) — tonnes loaded per hour bucket
-  const tp=tl.tonhr?tl.tonhr[k]:null;
-  if(tp&&tp.some(v=>v!=null)){
-    const tpmax=Math.max(...tp.filter(v=>v!=null)), niceMax=Math.max(100,Math.ceil(tpmax/100)*100);
-    const yT=v=>yb-v/niceMax*rowH, Xc=i=>X((i+0.5)*60), TPC='#6a3fd0';
-    for(let s=0;s<=4;s++){const tv=niceMax*s/4,gy=yT(tv);g+=`<text x="${left+plotW+5}" y="${gy+3}" font-size="8.5" fill="${TPC}">${Math.round(tv)}</text>`;}
-    g+=`<text x="${left+plotW+34}" y="${top+rowH/2}" transform="rotate(-90 ${left+plotW+34} ${top+rowH/2})" text-anchor="middle" font-size="9" fill="${TPC}">tonnes</text>`;
-    let run=[]; const runs=[];
-    tp.forEach((v,i)=>{if(v==null){if(run.length)runs.push(run);run=[];}else run.push([Xc(i),yT(v),v,i]);});
-    if(run.length)runs.push(run);
-    runs.forEach(r=>{if(r.length>1){const dd='M'+r.map(p=>p[0]+' '+p[1]).join(' L ');
-      g+=`<path d="${dd}" fill="none" stroke="#fff" stroke-width="3.4" stroke-opacity="0.7"/><path d="${dd}" fill="none" stroke="${TPC}" stroke-width="1.8"/>`;}
-      r.forEach(p=>{g+=`<circle cx="${p[0]}" cy="${p[1]}" r="2.4" fill="${TPC}"/><text x="${p[0]}" y="${p[1]-6}" text-anchor="middle" font-size="11" font-weight="700" fill="${TPC}">${fmt(p[2])}</text>`;});});}
-  const cs=tl.seg[k],sy=yb+4,shH=11;
-  g+=`<text x="${left-5}" y="${sy+shH/2+2.5}" text-anchor="end" font-size="7.5" fill="var(--muted)">status</text>`;
-  if(cs&&cs.length)cs.forEach(s=>{const x=X(s[0]),w=Math.max(0.5,s[1]/TOT*plotW);
-    g+=`<rect x="${x}" y="${sy}" width="${w}" height="${shH}" fill="${TLCOL[s[2]]||'#ccc'}"><title>${k} · ${s[3]||s[2]} · ${s[1]} min</title></rect>`;});
-  // per-load hang/queue band (same treatment as the Truck/Shovel Balance graph): hang up / queue down, green ≤ target, red hang / blue queue over
-  const lw=(tl.loadWaits&&tl.loadWaits[k])||[];
-  const an=(typeof V==='function'&&V())?V().analytics:null;
-  const budOf=arr=>{if(!an||!an[arr])return 0;const b=an[arr].find(x=>x.shovel===k);return b?b.tgt:0;};
-  const hb=budOf('hangbox'), qb=budOf('queuebox');
-  if(lw.length){
-    const maxV=14*60;   // fixed y-axis: ±14 min, values above are clamped
-    const Yu=v=>bandMid-Math.min(v,maxV)/maxV*(bandH/2), Yd=v=>bandMid+Math.min(v,maxV)/maxV*(bandH/2);
-    const bw=Math.max(1,Math.min(4,plotW/lw.length)), GRN='#2f8f4e',RED='#e23b32',BLU='#3f51b5';
-    for(let hh=0;hh<=12;hh++){const x=X(hh*60);g+=`<line x1="${x}" y1="${bandTop}" x2="${x}" y2="${bandBot}" stroke="#eef0f4" stroke-width="0.6"/>`;}
-    for(let v=120;v<=maxV;v+=120){const yu=Yu(v),yd=Yd(v),m=v/60;   // horizontal gridlines every 2 min (up + down)
-      g+=`<line x1="${left}" y1="${yu.toFixed(1)}" x2="${left+plotW}" y2="${yu.toFixed(1)}" stroke="#eef0f4" stroke-width="0.6"/><text x="${left-6}" y="${(yu+3).toFixed(1)}" text-anchor="end" font-size="8" fill="var(--muted)">${m}</text>`;
-      g+=`<line x1="${left}" y1="${yd.toFixed(1)}" x2="${left+plotW}" y2="${yd.toFixed(1)}" stroke="#eef0f4" stroke-width="0.6"/><text x="${left-6}" y="${(yd+3).toFixed(1)}" text-anchor="end" font-size="8" fill="var(--muted)">${m}</text>`;}
-    lw.forEach(p=>{const x=X(p[0]);
-      if(p[1]>0){const y=Yu(p[1]);g+=`<rect x="${(x-bw/2).toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${(bandMid-y).toFixed(1)}" fill="${p[1]<=hb?GRN:RED}" fill-opacity="0.72"/>`;}
-      if(p[2]>0){const y=Yd(p[2]);g+=`<rect x="${(x-bw/2).toFixed(1)}" y="${bandMid.toFixed(1)}" width="${bw.toFixed(1)}" height="${(y-bandMid).toFixed(1)}" fill="${p[2]<=qb?GRN:BLU}" fill-opacity="0.72"/>`;}});
-    if(hb>0)g+=`<line x1="${left}" y1="${Yu(hb).toFixed(1)}" x2="${left+plotW}" y2="${Yu(hb).toFixed(1)}" stroke="#8a2c22" stroke-width="1.1" stroke-dasharray="5 3"><title>hang target ${fmtTime(hb)}</title></line>`;
-    if(qb>0)g+=`<line x1="${left}" y1="${Yd(qb).toFixed(1)}" x2="${left+plotW}" y2="${Yd(qb).toFixed(1)}" stroke="#243b8a" stroke-width="1.1" stroke-dasharray="5 3"><title>queue target ${fmtTime(qb)}</title></line>`;
-    g+=`<line x1="${left}" y1="${bandMid}" x2="${left+plotW}" y2="${bandMid}" stroke="#98a0ac" stroke-width="1"/>`;
-    g+=`<text x="13" y="${bandMid}" transform="rotate(-90 13 ${bandMid})" text-anchor="middle" font-size="9" fill="var(--muted)">min/load</text>`;
-    g+=`<text x="${left+3}" y="${bandTop+9}" font-size="8" fill="var(--muted)">▲ hang</text>`;
-    g+=`<text x="${left+3}" y="${bandBot-3}" font-size="8" fill="var(--muted)">▼ queue</text>`;
-  }
-  if(parts.length) g+=`<text x="${left+plotW-3}" y="${bandTop+11}" text-anchor="end" font-size="9.5" font-weight="600" fill="#3a3f46" stroke="#fff" stroke-width="2.8" paint-order="stroke">avg ${parts.join(' · ')} min/load</text>`;
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%">${g}</svg><div class="badges" style="margin-top:6px"><span class="badge"><b style="color:#111">—</b> trucks at shovel (0–${qmax})</span><span class="badge"><b style="color:#6a3fd0">—</b> tonnes (right axis)</span><span class="badge">band = hang/queue per load · <b style="color:#2f8f4e">■</b> ≤ target · <b style="color:#e23b32">■</b> hang over · <b style="color:#3f51b5">■</b> queue over</span>`+
-    Object.entries(TLCOL).map(([kk,c])=>`<span class="badge"><b style="color:${c}">■</b> ${kk}</span>`).join('')+`</div>`;
-}
-function drawPayBox(pay,tg){
-  if(!pay.length)return '<div class="foot">No payload data.</div>';
-  const W=900,H=320,L=52,Rm=14,T=14,B=44,pw=W-L-Rm,ph=H-T-B;
-  let allv=[tg];pay.forEach(p=>{allv.push(p.q1,p.q3);(p.outliers||[]).forEach(o=>allv.push(o));});
-  let lo=Math.min(...allv),hi=Math.max(...allv);const span=(hi-lo)||1;lo-=span*0.05;hi+=span*0.05;
-  const Y=v=>T+ph-(v-lo)/(hi-lo)*ph,n=pay.length,step=pw/n,bw=Math.min(34,step*0.5);
-  let g='';
-  for(let i=0;i<=5;i++){const v=lo+(hi-lo)*i/5,y=Y(v);g+=`<line x1="${L}" y1="${y}" x2="${L+pw}" y2="${y}" stroke="var(--line)" stroke-width="0.5"/><text x="${L-6}" y="${y+3}" text-anchor="end" font-size="9.5" fill="var(--muted)">${Math.round(v)}</text>`;}
-  g+=`<line x1="${L}" y1="${Y(tg)}" x2="${L+pw}" y2="${Y(tg)}" stroke="#e23b32" stroke-width="1.4" stroke-dasharray="6 4"/><text x="${L+pw}" y="${Y(tg)-4}" text-anchor="end" font-size="10" fill="#e23b32">target ${tg}t</text>`;
-  pay.forEach((p,i)=>{const cx=L+step*(i+0.5),c=p.mat==='Waste'?'#d08a1f':'#1f9e8b',yt=Y(p.q3),yb=Y(p.q1);
-    g+=`<rect x="${cx-bw/2}" y="${yt}" width="${bw}" height="${Math.max(1,yb-yt)}" fill="${c}" fill-opacity="0.35" stroke="${c}" stroke-width="1.2"><title>${p.shovel} (${p.type==='BE495'?'BE 495':'HIT 8000'} · ${p.mat}) n=${p.n}\nQ1 ${p.q1} · median ${p.median} · Q3 ${p.q3} · IQR ${p.iqr}\nmean ${p.avg}\ncompliance ${p.compliance}%</title></rect>`;
-    g+=`<line x1="${cx-bw/2}" y1="${Y(p.median)}" x2="${cx+bw/2}" y2="${Y(p.median)}" stroke="${c}" stroke-width="2"/>`;
-    (p.outliers||[]).forEach(o=>{g+=`<circle cx="${cx}" cy="${Y(o)}" r="2.2" fill="none" stroke="${c}" stroke-width="1"><title>${p.shovel} outlier ${o}t</title></circle>`;});
-    const my=Y(p.avg);g+=`<path d="M${cx} ${my-4} L${cx+4} ${my} L${cx} ${my+4} L${cx-4} ${my} Z" fill="#2b2f36"/>`;
-    g+=`<text x="${cx}" y="${H-B+15}" text-anchor="middle" font-size="9.5" fill="var(--ink)">${p.shovel}</text>`;});
-  g+=`<text x="13" y="${T+ph/2}" transform="rotate(-90 13 ${T+ph/2})" text-anchor="middle" font-size="11" fill="var(--muted)">payload (t)</text>`;
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%">${g}</svg><div class="badges" style="margin-top:6px"><span class="badge">box = Q1–Q3</span><span class="badge">line = median</span><span class="badge">◆ mean</span><span class="badge">○ outlier</span><span class="badge"><b style="color:#1f9e8b">■</b> ore &nbsp; <b style="color:#d08a1f">■</b> waste</span></div>`;
-}
-// Generic per-shovel box plot (like drawPayBox) with a per-box budget target tick — used for hang/load time.
-function drawBoxPlot(data,o){
-  o=o||{}; const unit=o.unit||'', axisLabel=o.axisLabel||'', sc=o.scale||1, dec=o.dec, hideOut=!!o.hideOutliers;
-  if(!data||!data.length)return '<div class="foot">No data for this view.</div>';
-  const S=v=>v*sc, fv=v=>dec!=null?S(v).toFixed(dec):Math.round(S(v));           // scale + display format
-  const W=900,H=320,L=52,Rm=14,T=14,B=44,pw=W-L-Rm,ph=H-T-B;
-  let allv=[];data.forEach(p=>{allv.push(S(p.q1),S(p.q3),S(p.tgt));if(!hideOut)(p.outliers||[]).forEach(x=>allv.push(S(x)));});
-  let lo=Math.min(...allv),hi=Math.max(...allv);const span=(hi-lo)||1;lo-=span*0.05;hi+=span*0.05;
-  const Y=v=>T+ph-(v-lo)/(hi-lo)*ph,n=data.length,step=pw/n,bw=Math.min(34,step*0.5);
-  let g='';
-  for(let i=0;i<=5;i++){const v=lo+(hi-lo)*i/5,y=Y(v);g+=`<line x1="${L}" y1="${y}" x2="${L+pw}" y2="${y}" stroke="var(--line)" stroke-width="0.5"/><text x="${L-6}" y="${y+3}" text-anchor="end" font-size="9.5" fill="var(--muted)">${dec!=null?v.toFixed(dec):Math.round(v)}</text>`;}
-  data.forEach((p,i)=>{const cx=L+step*(i+0.5),c=p.col||(p.mat==='Waste'?'#d08a1f':'#1f9e8b'),yt=Y(S(p.q3)),yb=Y(S(p.q1));
-    const ty=Y(S(p.tgt));g+=`<line x1="${cx-bw/2-3}" y1="${ty}" x2="${cx+bw/2+3}" y2="${ty}" stroke="#e23b32" stroke-width="1.4" stroke-dasharray="4 3"><title>${p.shovel} budget ${fv(p.tgt)}${unit}</title></line>`;
-    g+=`<rect x="${cx-bw/2}" y="${yt}" width="${bw}" height="${Math.max(1,yb-yt)}" fill="${c}" fill-opacity="0.35" stroke="${c}" stroke-width="1.2"><title>${p.shovel} (${p.type==='BE495'?'BE 495 · ':(p.type==='HIT8000'?'HIT 8000 · ':'')}${p.mat}) n=${p.n}\nQ1 ${fv(p.q1)} · median ${fv(p.median)} · Q3 ${fv(p.q3)}\nmean ${fv(p.avg)}\nbudget ${fv(p.tgt)}${unit} · within ±10% ${p.compliance}%${p.side2!=null?'\\nloading: single '+p.side1+'% · double '+p.side2+'%':''}</title></rect>`;
-    g+=`<line x1="${cx-bw/2}" y1="${Y(S(p.median))}" x2="${cx+bw/2}" y2="${Y(S(p.median))}" stroke="${c}" stroke-width="2"/>`;
-    const my=Y(S(p.avg));g+=`<path d="M${cx} ${my-4} L${cx+4} ${my} L${cx} ${my+4} L${cx-4} ${my} Z" fill="#2b2f36"/>`;
-    g+=`<text x="${cx}" y="${H-B+15}" text-anchor="middle" font-size="9.5" fill="var(--ink)">${p.shovel}</text>`;
-    if(p.side2!=null){const ly=Math.min(T+ph-5,Y(S(p.avg))+17);g+=`<text x="${cx}" y="${ly.toFixed(1)}" text-anchor="middle" font-size="14" font-weight="700" fill="#7a4fd0" stroke="#fff" stroke-width="3" paint-order="stroke">${p.side2}%</text>`;}});
-  g+=`<text x="13" y="${T+ph/2}" transform="rotate(-90 13 ${T+ph/2})" text-anchor="middle" font-size="11" fill="var(--muted)">${axisLabel}</text>`;
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%">${g}</svg><div class="badges" style="margin-top:6px"><span class="badge">box = Q1–Q3</span><span class="badge">line = median</span><span class="badge">◆ mean</span><span class="badge"><b style="color:#e23b32">--</b> budget</span><span class="badge"><b style="color:#1f9e8b">■</b> ore &nbsp; <b style="color:#d08a1f">■</b> waste</span>${data.some(p=>p.side2!=null)?`<span class="badge"><b style="color:#7a4fd0">NN%</b> below mean = double-side loading share (from ShovelLoadingSide)</span>`:''}</div>`;
-}
-// ---- shared score/summary helpers (Overview exec line + Trends) ----
-function viewScores(v){
-  if(!v) return {hSc:null,lSc:null,tm:null,hAct:null,plan:null};
-  const tw=v.trucksWF, sw=v.shovelWF2;
-  const hPot=tw?(tw.availDecomp?tw.schedPotential:tw.potential):0, hAct=tw?tw.actual:null, hSc=hPot?hAct/hPot*100:null;
-  let lSc=null;
-  if(sw){const lPot=sw.availDecomp?sw.schedPotential:sw.potential; lSc=lPot?sw.actual/lPot*100:null;}
-  else if(v.loading){lSc=v.loading.score;}
-  const tm=(hSc!=null&&lSc!=null)?(lSc-hSc):null;
-  const plan=(v.analytics&&v.analytics.cumulative)?v.analytics.cumulative.plan:null;
-  return {hSc,lSc,tm,hAct,plan};
-}
-function av797(v){const a=(v&&v.availability||[]).find(x=>x.group==='Cat 797');return a?{pa:a.PA,ua:a.UA,oe:a.OE}:null;}
-function matchWord(tm){return tm==null?'—':(Math.abs(tm)<=3?'Balanced':(tm<0?'Under-Trucked':'Over-Trucked'));}
-const FLBL={Payload:'Payload',Load:'Load Time',Queue:'Queue at Shovel',Spot:'Spot at Shovel',DumpIdle:'Dump Idle',Dumping:'Dumping',FullHaul:'Full Haul',EmptyHaul:'Empty Haul',Hang:'Hang Time',PA:'Availability',UA:'Standby',OE:'Delay'};
-function factorsFor(which){
-  // biggest positive (pro) and biggest negative (con) tonnage factor of the fleet waterfall
-  const v=V(); let src=null;
-  if(which==='haul'){const tw=v.trucksWF; if(!tw)return null; src=Object.assign({},tw.rows); if(tw.availDecomp){src.PA=tw.availDecomp.pa.t;src.UA=tw.availDecomp.ua.t;src.OE=tw.availDecomp.oe.t;}}
-  else {const sw=v.shovelWF2; if(!sw)return null; src=Object.assign({},sw.rows); if(sw.availDecomp){src.PA=sw.availDecomp.pa.t;src.UA=sw.availDecomp.ua.t;src.OE=sw.availDecomp.oe.t;}}
-  let pro=null,con=null;
-  for(const k in src){const val=src[k]||0;
-    if(val>0&&(!pro||val>pro.val))pro={label:FLBL[k]||k,val};
-    if(val<0&&(!con||val<con.val))con={label:FLBL[k]||k,val};}
-  return {pro,con};
-}
-function renderTrends(){
-  document.getElementById('trsub').textContent='('+view+')';
-  const chron=DATA.shifts.slice().reverse();   // oldest → newest
-  const labels=chron.map(s=>s.name);
-  const cur=chron.map(s=>s.id===shift);
-  const dot=(base)=>chron.map((s,i)=>cur[i]?'#111':base);
-  const rad=chron.map((s,i)=>cur[i]?4.5:2);
-  const S=chron.map(s=>{const sd=DATA.byShift[s.id]; return sd?viewScores(sd.views[view]):null;});
-  const A=chron.map(s=>{const sd=DATA.byShift[s.id]; return sd?av797(sd.views[view]):null;});
-  const g1=S.map(x=>x?x.hSc:null), g2=S.map(x=>x?x.lSc:null);
-  const pa=A.map(x=>x?x.pa:null), ua=A.map(x=>x?x.ua:null), oe=A.map(x=>x?x.oe:null);
-  const act=S.map(x=>x?x.hAct:null), plan=S.map(x=>x?x.plan:null), match=S.map(x=>x?x.tm:null);
-  if(typeof Chart==='undefined'){document.getElementById('trsub').textContent='('+view+') — charts need internet to load Chart.js';return;}
-  const F10={font:{size:10}},F9={font:{size:9}};
-  const baseOpt=extra=>({responsive:true,maintainAspectRatio:false,interaction:{intersect:false,mode:'index'},
-    plugins:{legend:{labels:{boxWidth:12,...F10}}},scales:Object.assign({x:{ticks:{maxTicksLimit:14,...F9}}},extra)});
-  const line=(label,data,color,dash)=>({label,data,borderColor:color,backgroundColor:color,spanGaps:false,tension:.2,
-    borderWidth:1.8,borderDash:dash||[],pointRadius:rad,pointBackgroundColor:dot(color),pointBorderColor:dot(color)});
-  mk('chTrScore',{type:'line',data:{labels,datasets:[line('Haulage',g1,'#3f51b5'),line('Loading',g2,'#1f9e8b')]},
-    options:baseOpt({y:{ticks:{...F10,callback:v=>v+'%'}}})});
-  mk('chTrAvail',{type:'line',data:{labels,datasets:[line('PA',pa,'#2f8f4e'),line('UA',ua,'#c98a1f'),line('OE',oe,'#c0392b')]},
-    options:baseOpt({y:{ticks:{...F10,callback:v=>v+'%'}}})});
-  mk('chTrProd',{type:'line',data:{labels,datasets:[line('Actual dumped',act,'#3f51b5'),line('Plan',plan,'#888',[6,4])]},
-    options:baseOpt({y:{ticks:{...F10,callback:v=>(v/1000)+'k'}}})});
-  mk('chTrMatch',{type:'line',data:{labels,datasets:[line('Truck Match',match,'#7a4fd0')]},
-    options:baseOpt({y:{ticks:{...F10}}})});
-}
 let cmOpt={loaded:true,empty:true,hi:false,tbl:false,road:true,base:true,snap:true};   // cycle-map toggles
 function renderCycleMap(){
   const cyc=V().haulCycles, CO=(DATA.locCoords)||{};
@@ -5301,14 +5049,8 @@ function renderCycleMap(){
 function cmToggle(k,btn){cmOpt[k]=!cmOpt[k]; if(btn)btn.classList.toggle('on',cmOpt[k]); renderCycleMap();}
 function renderMatPlace(){   // Material Placement Sankey (its own tab) — SVG, renders even without Chart.js
   document.getElementById('hcsub2').textContent='('+view+')';
-  document.getElementById('hc2').innerHTML=drawTruckFlow(V().haulCycles,'shovel');
-  const legTxt=anchor=>`<span class="badge"><b style="color:${CORE}">■</b> ore</span><span class="badge"><b style="color:${CWASTE}">■</b> waste</span><span class="badge">▨ hatched = locked (un-optimized) loads · % under nodes</span><span class="badge">ribbon width ∝ tonnage · <b>each ribbon's length is its own haul distance to scale</b> (${anchor} = 0 km — see the ruler). Each node stays a single bar whose <b>width spans that node's range of path distances</b>.</span>`;
-  document.getElementById('hcleg2').innerHTML=legTxt('shovel');
-  document.getElementById('hc3').innerHTML=drawTruckFlow(V().haulCycles,'dump');
-  document.getElementById('hcleg3').innerHTML=legTxt('dump');
-  document.getElementById('hcSimple').innerHTML=drawTruckFlow(V().haulCycles,'dump',true);
-  document.getElementById('hclegSimple').innerHTML=`<span class="badge"><b style="color:${CORE}">■</b> ore</span><span class="badge"><b style="color:${CWASTE}">■</b> waste</span><span class="badge">▨ hatched = locked (un-optimized) loads · % under nodes</span><span class="badge">same dump-centric layout — full-haul tonnage (shovel→dump) + empty-haul tonnage (dump→next shovel) + % locked all retained · ribbon width ∝ tonnage · <b>haul distance NOT encoded</b> (even columns).</span>`;
-  // ---- cycle map (spatial) ----
+  document.getElementById('hc2').innerHTML=drawTruckFlow(V().haulCycles);
+  document.getElementById('hcleg2').innerHTML=`<span class="badge"><b style="color:${CORE}">■</b> ore</span><span class="badge"><b style="color:${CWASTE}">■</b> waste</span><span class="badge">▨ hatched = locked (un-optimized) loads · % under shovel/dump nodes</span><span class="badge">ribbon width ∝ tonnage · ribbon length ∝ haul distance (left = empty, right = full) · km label = actual/expected full-haul</span>`;
   renderCycleMap();
   const roadBadge=(DATA.roadCells&&DATA.roadCells.length)?`<span class="badge"><b style="color:#8a8f98">▪</b> haul roads (truck-trace density)</span>`:'';
   document.getElementById('hcleg4').innerHTML=`<span class="badge"><b style="color:#2f6f9f">●</b> shovel</span><span class="badge"><b style="color:${CORE}">●</b> ore dump</span><span class="badge"><b style="color:${CWASTE}">●</b> waste dump</span><span class="badge">circle size ∝ tonnes</span><span class="badge"><b style="color:${CORE}">—</b> loaded haul (shovel → dump)</span><span class="badge"><b style="color:#9aa6b5">- -</b> empty return (dump → next shovel)</span><span class="badge"><b style="color:#d1495b">- -</b> longest empties (when highlighted)</span>${roadBadge}<span class="badge">arrowheads show cycle direction · spacing to scale in km</span>`;
