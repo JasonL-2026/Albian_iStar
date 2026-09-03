@@ -5931,7 +5931,7 @@ function initPbS3ActionRegister(){
   setOpenToggleUI();
   renderList();
 }
-const TABS=[['snapshot','Equipment Status',0],['pulse','LP Solutions',0],['blend','Blend Page',0],['overview','Shift Overview',0],['playbook','Playbook',0],['matplace','Material Placement',0],['balance','Truck / Shovel Balance',0],['shovel2','Shovel Waterfall',0],['loading','Loading Drill-Down',1],['shovprod','Shovel Productivity',1],['delaysS','Delays & Standby',1],['trucks','Truck Waterfall',0],['haulage','Haulage Drill-Down',1],['truckprod','Truck Productivity',1],['delays','Delays & Standby',1],['hourlyperf','Hourly Production',0],['lube','Fuel and Lube',0],['shiftstats','Shift Stats',0],['trends','Cross-Shift Trends',0],['appendix','Appendix',0],['sandbox','Sandbox',0]];
+const TABS=[['overview','Shift Overview',0],['playbook','Playbook',0],['snapshot','Equipment Status',0],['pulse','LP Solutions',0],['blend','Blend Page',0],['matplace','Material Placement',0],['balance','Truck / Shovel Balance',0],['shovel2','Shovel Waterfall',0],['loading','Loading Drill-Down',1],['shovprod','Shovel Productivity',1],['delaysS','Delays & Standby',1],['trucks','Truck Waterfall',0],['haulage','Haulage Drill-Down',1],['truckprod','Truck Productivity',1],['delays','Delays & Standby',1],['hourlyperf','Hourly Production',0],['lube','Fuel and Lube',0],['shiftstats','Shift Stats',0],['trends','Cross-Shift Trends',0],['appendix','Appendix',0],['sandbox','Sandbox',0]];
 let tab='overview';
 let sbAuto=true;   // sidebar auto-hides (slides off-screen) by default; hover the left edge to reveal
 function applySidebar(){document.body.classList.toggle('sb-auto',sbAuto);if(!sbAuto)document.body.classList.remove('sb-show');posHideTab();}
