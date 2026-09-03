@@ -5574,8 +5574,6 @@ function renderPlaybook(){
     dataEntryGuide+=`</tr>`;
   });
   dataEntryGuide+=`</tbody></table></div></details>`;
-  const deviationOverrideOpts=msgKeys.map(k=>`<option value="${escA(PLAYBOOK_GAP_LIBRARY[k].detail||'')}">${escH((PLAYBOOK_GAP_LIBRARY[k].measure||k)+' — '+PLAYBOOK_GAP_LIBRARY[k].detail)}</option>`).join('');
-
   h+=`<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:12px">`;
   h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">Mine <span style="font-weight:400;color:#888">(Context)</span>
     <select name="mine" required style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px;background:#fff">
@@ -5600,12 +5598,9 @@ function renderPlaybook(){
   </label>`;
   h+=`</div>`;
 
-  h+=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">`;
+  h+=`<div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px">`;
   h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">Deviation Observed <span style="font-weight:400;color:#888">(Activity)</span>
     <input type="text" name="deviation" placeholder="e.g. Truck queue exceeds 15 mins" required style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px">
-    <select name="deviationOverride" onchange="pbS3ApplyDeviationOverride(this)" style="margin-top:6px;padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:12px;background:#fff">
-      <option value="">Override from message library (optional)</option>${deviationOverrideOpts}
-    </select>
   </label>`;
   h+=`<label style="font-size:12px;font-weight:600;color:#344;display:flex;flex-direction:column;gap:4px">Corrective Action <span style="font-weight:400;color:#888">(Activity)</span>
     <input type="text" name="corrective" placeholder="Imperative directive to fix the variance" required style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px">
@@ -5784,13 +5779,6 @@ function initPbS3ActionRegister(){
       else el.value=item[key]||'';
     });
   }
-  window.pbS3ApplyDeviationOverride=function(sel){
-    const f=document.getElementById('pb-s3-form');
-    if(!f) return;
-    const dev=f.elements['deviation'];
-    if(!dev) return;
-    if(sel&&sel.value) dev.value=sel.value;
-  };
   function dtLocal(d){
     const p=n=>String(n).padStart(2,'0');
     return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T'+p(d.getHours())+':'+p(d.getMinutes());
@@ -5938,7 +5926,6 @@ function initPbS3ActionRegister(){
       const shSel=f.elements['shiftId']; if(shSel) shSel.value=shift||'';
       const dtSel=f.elements['dateCreated']; if(dtSel) dtSel.value=dtLocal(new Date());
       const scSel=f.elements['statusChangedAt']; if(scSel) scSel.value='';
-      const ov=f.elements['deviationOverride']; if(ov) ov.value='';
     }
     const modal=document.getElementById('pb-s3-modal');
     if(modal) modal.style.display='block';
@@ -5951,7 +5938,6 @@ function initPbS3ActionRegister(){
     setModalMode(-1);
     f.reset();
     setFormValues(f, buildGeneratedAction(rec));
-    const ov=f.elements['deviationOverride']; if(ov) ov.value='';
     const modal=document.getElementById('pb-s3-modal');
     if(modal) modal.style.display='block';
   };
