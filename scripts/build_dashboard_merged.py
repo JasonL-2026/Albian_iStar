@@ -683,7 +683,7 @@ def build_shift(sm):
                   'avg':round(v[1]/v[0]) if v[0] else 0,'over':round(v[3]/v[0]*100) if v[0] else 0}
                  for k,v in sorted(rr.items(),key=lambda x:-x[1][1])]
         FEDGES=[0,8,16,24,32,40,60,80,100]      # custom (non-uniform) fuel-level bin edges
-        hist=[0]*(len(FEDGES)-1); histMan=[0]*(len(FEDGES)-1); faulty=0; zero=0
+        hist=[0]*(len(FEDGES)-1); faulty=0; zero=0
         fsm=defaultdict(lambda:[0,0.0,''])   # eqmt -> [faulty-read count, sample value, type]
         for r in Lv:
             f=num(r['FuelLevel'])
@@ -695,8 +695,6 @@ def build_shift(sm):
                 for j in range(len(FEDGES)-1):
                     if f<FEDGES[j+1]: bi=j; break
                 hist[bi]+=1
-                if _assign_manual(r['Eqmt'],_dtp(r['TimeStamp'])):   # manual-assigned refuel
-                    histMan[bi]+=1
         faultySensor=[{'eqmt':k,'type':v[2],'reads':v[0],'value':round(v[1])}
                       for k,v in sorted(fsm.items(),key=lambda x:(x[1][2],x[0]))]
         lb=sorted(Lv,key=lambda r:-(num(r['Duration'])-num(r['ExpectedDuration'])))[:12]
@@ -712,7 +710,6 @@ def build_shift(sm):
         RMAP={'FUEL&LUBE':'fuel','WAIT FOR FUEL BAY':'wait','FUEL BREAK':'brk'}
         hb={'fuel':[0.0]*12,'wait':[0.0]*12,'brk':[0.0]*12,'exp':[0.0]*12}
         occ=[0]*12; occWait=[0]*12
-        fuelMan=[0.0]*12; occFuel=[0]*12; occFuelMan=[0]*12   # manual-assigned fuel events per hour
         for r in Lv:
             d=_dtp(r['TimeStamp']); mn=mfs(d) if d else None
             if mn is None or mn<0 or mn>=720: continue
@@ -721,14 +718,9 @@ def build_shift(sm):
             hb['exp'][i]+=num(r['ExpectedDuration'])/60
             occ[i]+=1
             if r['Reason']=='WAIT FOR FUEL BAY': occWait[i]+=1
-            if r['Reason']=='FUEL&LUBE':
-                occFuel[i]+=1
-                if _assign_manual(r['Eqmt'],d):     # matched to a dispatcher (manual) fuel assignment
-                    fuelMan[i]+=num(r['Duration'])/60; occFuelMan[i]+=1
         hourly={'hours':[f"{(base+i)%24:02d}:00" for i in range(12)],'fuel':[round(x,1) for x in hb['fuel']],
                 'wait':[round(x,1) for x in hb['wait']],'brk':[round(x,1) for x in hb['brk']],
-                'exp':[round(x,1) for x in hb['exp']],'occ':occ,'occWait':occWait,
-                'fuelMan':[round(x,1) for x in fuelMan],'occFuel':occFuel,'occFuelMan':occFuelMan}
+                'exp':[round(x,1) for x in hb['exp']],'occ':occ,'occWait':occWait}
         # ---- fuel assignment automation (System vs Manual) ----
         fa=[r for r in fuel_assign_all if r.get('ShiftID')==sid and any(p in (r.get('ToLocation') or '') for p in pits)]
         fa_sys=[r for r in fa if r.get('AssignType')=='System Fuel Assignment']
@@ -742,22 +734,9 @@ def build_shift(sm):
         fuelAssign={'system':fa_sys_n,'manual':fa_man_n,'total':fa_tot,
                     'sysPct':round(fa_sys_n/fa_tot*100) if fa_tot else 0,
                     'manPct':round(fa_man_n/fa_tot*100) if fa_tot else 0}
-        # ---- truck assignment automation (System vs Manual/Dispatcher, all pits) ----
-        ta=[r for r in truck_assign_all if r.get('ShiftID')==sid]
-        ta_sys=[r for r in ta if r.get('AssignType')=='System Assign']
-        ta_man_raw=[r for r in ta if r.get('AssignType') in ('Dispatcher Assign','Reassign')]
-        ta_man_latest={}
-        for r in ta_man_raw:
-            tk=r.get('Truck',''); ts=_dtp(r.get('TIMESTAMP',''))
-            if tk and ts and (tk not in ta_man_latest or ts>ta_man_latest[tk][1]):
-                ta_man_latest[tk]=(r,ts)
-        ta_sys_n=len(ta_sys); ta_man_n=len(ta_man_latest); ta_tot=ta_sys_n+ta_man_n
-        truckAssign={'system':ta_sys_n,'manual':ta_man_n,'total':ta_tot,
-                     'sysPct':round(ta_sys_n/ta_tot*100) if ta_tot else 0,
-                     'manPct':round(ta_man_n/ta_tot*100) if ta_tot else 0}
-        return {'reasons':reasons,'fuelHist':hist,'fuelHistMan':histMan,'fuelEdges':FEDGES,'faulty':faulty,'zero':zero,'shortCount':short,
+        return {'reasons':reasons,'fuelHist':hist,'fuelEdges':FEDGES,'faulty':faulty,'zero':zero,'shortCount':short,
                 'leaderboard':leaderboard,'byClass':byClass,'n':len(Lv),'hourly':hourly,
-                'faultySensor':faultySensor,'fuelAssign':fuelAssign,'truckAssign':truckAssign}
+                'faultySensor':faultySensor,'fuelAssign':fuelAssign}
 
     # ---- aggregators (close over the shift locals) ----
     def agg_haul(pits):
@@ -3360,16 +3339,6 @@ function renderLube(){
   if(typeof Chart==='undefined')return;
   const hy=lu.hourly, toH=a=>a.map(v=>v/60);
   const fuelH=toH(hy.fuel),waitH=toH(hy.wait),brkH=toH(hy.brk),expH=toH(hy.exp);
-  // split fuel time into system-assigned (solid) vs manual-assigned (hatched)
-  const fuelManH=toH(hy.fuelMan||new Array(12).fill(0));
-  const fuelSysH=fuelH.map((v,i)=>Math.max(0,v-(fuelManH[i]||0)));
-  const occFuel=hy.occFuel||new Array(12).fill(0), occFuelMan=hy.occFuelMan||new Array(12).fill(0);
-  const mkHatch=(bg,line)=>{const c=document.createElement('canvas');c.width=c.height=6;const x=c.getContext('2d');
-    x.fillStyle=bg;x.fillRect(0,0,6,6);x.strokeStyle=line;x.lineWidth=1.4;
-    x.beginPath();x.moveTo(0,6);x.lineTo(6,0);x.stroke();
-    x.beginPath();x.moveTo(-2,2);x.lineTo(2,-2);x.stroke();
-    x.beginPath();x.moveTo(4,8);x.lineTo(8,4);x.stroke();return x.createPattern(c,'repeat');};
-  const FUELHATCH=mkHatch('#1f9e8b','#0b544a');
   const barLabels={id:'barLabels',afterDatasetsDraw(ch){
     const ctx=ch.ctx,y=ch.scales.y,m=ch.getDatasetMeta(0); if(!m) return;
     ctx.save(); ctx.textAlign='center'; ctx.font='600 9px system-ui,sans-serif';
@@ -3384,42 +3353,38 @@ function renderLube(){
       const ow=hy.occWait[i];
       if(ow>0){ctx.fillStyle='#e0952a';ctx.textBaseline='top';
         ctx.fillText('bay '+ow+'×',xp,y.getPixelForValue(0)+3);}
-      const fm=occFuelMan[i];                       // manual-assigned fuel events this hour
-      if(fm>0){const yt=y.getPixelForValue(fuelSysH[i]),yb=y.getPixelForValue(fuelSysH[i]+fuelManH[i]);
-        if(yt-yb>=11){ctx.fillStyle='#08403a';ctx.textBaseline='middle';ctx.font='700 9px system-ui,sans-serif';
-          ctx.fillText(fm+'',xp,(yt+yb)/2);ctx.font='600 9px system-ui,sans-serif';}}
     });
     ctx.restore();
   }};
   mk('chLubeTrend',{type:'bar',data:{labels:hy.hours,datasets:[
-    {type:'bar',label:'Fuel & lube — system',data:fuelSysH,backgroundColor:'#1f9e8b',stack:'s'},
-    {type:'bar',label:'Fuel & lube — manual ▨',data:fuelManH,backgroundColor:FUELHATCH,stack:'s'},
-    {type:'bar',label:'Wait for bay',data:waitH,backgroundColor:'#e0952a',stack:'s'},
-    {type:'bar',label:'Break',data:brkH,backgroundColor:'#9aa0ab',stack:'s'},
-    {type:'line',label:'Expected',data:expH,borderColor:'#2b2f36',borderDash:[4,3],pointRadius:0,borderWidth:1.4}
-  ]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:14,bottom:14}},plugins:{legend:{labels:{boxWidth:11,font:{size:10}}},tooltip:{callbacks:{footer:c=>{const i=c[0].dataIndex;return 'total '+(fuelH[i]+waitH[i]+brkH[i]).toFixed(1)+'h · '+hy.occ[i]+' occ'+(hy.occWait[i]?' ('+hy.occWait[i]+' wait for bay)':'')+(occFuel[i]?' · '+occFuelMan[i]+'/'+occFuel[i]+' fuel manually assigned':'');}}}},scales:{x:{stacked:true,title:{display:true,text:'hour of shift'},ticks:{font:{size:10}}},y:{stacked:true,title:{display:true,text:'hours'},ticks:{font:{size:10}}}}},plugins:[barLabels]});
+    {type:'bar',label:'Fuel & lube',data:fuelH,backgroundColor:'#1f9e8b',stack:'s',order:2},
+    {type:'bar',label:'Wait for bay',data:waitH,backgroundColor:'#e0952a',stack:'s',order:2},
+    {type:'bar',label:'Break',data:brkH,backgroundColor:'#9aa0ab',stack:'s',order:2},
+    {type:'line',label:'Expected',data:expH,borderColor:'#2b2f36',borderDash:[4,3],pointRadius:0,borderWidth:1.4,fill:false,order:1}
+  ]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:14,bottom:14}},plugins:{legend:{labels:{boxWidth:11,font:{size:10}}},tooltip:{callbacks:{footer:c=>{const i=c[0].dataIndex;return 'total '+(fuelH[i]+waitH[i]+brkH[i]).toFixed(1)+'h · '+hy.occ[i]+' occ'+(hy.occWait[i]?' ('+hy.occWait[i]+' wait for bay)':'');}}}},scales:{x:{stacked:true,title:{display:true,text:'hour of shift'},ticks:{font:{size:10}}},y:{stacked:true,title:{display:true,text:'hours'},ticks:{font:{size:10}}}}},plugins:[barLabels]});
   const fh=lu.fuelHist, fhTot=fh.reduce((a,b)=>a+b,0)||1;
-  const fe=lu.fuelEdges||[0,10,20,30,40,50,60,70,80,90,100];
-  const fhMan=lu.fuelHistMan||new Array(fh.length).fill(0);
-  const fhSys=fh.map((v,i)=>Math.max(0,v-(fhMan[i]||0)));
-  const binCol=i=>fe[i]<8?'#e23b32':(fe[i]<40?'#1f9e8b':'#9aa0ab');
-  const binLine=i=>fe[i]<8?'#7d1611':(fe[i]<40?'#0b544a':'#565b66');
+  const fuelAvg=fhTot/fh.length;
   const fuelPct={id:'fuelPct',afterDatasetsDraw(ch){
     const ctx=ch.ctx,y=ch.scales.y,m=ch.getDatasetMeta(0); if(!m) return;
-    ctx.save(); ctx.textAlign='center'; ctx.font='600 9px system-ui,sans-serif';
+    ctx.save(); ctx.textAlign='center'; ctx.textBaseline='bottom'; ctx.font='600 9px system-ui,sans-serif'; ctx.fillStyle='#2b2f36';
     fh.forEach((v,i)=>{const bar=m.data[i]; if(!bar||v<=0) return;
-      ctx.fillStyle='#2b2f36'; ctx.textBaseline='bottom';
-      ctx.fillText(Math.round(v/fhTot*100)+'%',bar.x,y.getPixelForValue(v)-3);
-      const mv=fhMan[i]||0;                                   // manual-assigned refuels in this bin
-      if(mv>0){const yt=y.getPixelForValue(fhSys[i]),yb=y.getPixelForValue(fhSys[i]+mv);
-        if(yt-yb>=11){ctx.fillStyle='#fff';ctx.textBaseline='middle';ctx.font='700 9px system-ui,sans-serif';
-          ctx.fillText(mv+'',bar.x,(yt+yb)/2);ctx.font='600 9px system-ui,sans-serif';}}});
+      ctx.fillText(Math.round(v/fhTot*100)+'%',bar.x,y.getPixelForValue(v)-3);});
     ctx.restore();
   }};
+  const fuelAvgLine={id:'fuelAvgLine',afterDatasetsDraw(ch){
+    const ctx=ch.ctx,y=ch.scales.y,ca=ch.chartArea; if(!ca) return;
+    const yp=y.getPixelForValue(fuelAvg);
+    ctx.save(); ctx.beginPath(); ctx.setLineDash([5,4]); ctx.strokeStyle='#2b2f36'; ctx.lineWidth=1.4;
+    ctx.moveTo(ca.left,yp); ctx.lineTo(ca.right,yp); ctx.stroke();
+    ctx.setLineDash([]); ctx.font='600 9px system-ui,sans-serif'; ctx.fillStyle='#2b2f36';
+    ctx.textAlign='left'; ctx.textBaseline='bottom';
+    ctx.fillText('avg',ca.right+2,yp+1);
+    ctx.restore();
+  }};
+  const fe=lu.fuelEdges||[0,10,20,30,40,50,60,70,80,90,100];
   mk('chLubeFuel',{type:'bar',data:{labels:fh.map((_,i)=>fe[i]+'-'+fe[i+1]),datasets:[
-    {label:'system-assigned',data:fhSys,backgroundColor:fh.map((_,i)=>binCol(i)),stack:'f'},
-    {label:'manual-assigned ▨',data:fhMan,backgroundColor:fh.map((_,i)=>mkHatch(binCol(i),binLine(i))),stack:'f'}
-  ]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:12}},plugins:{legend:{display:true,labels:{boxWidth:11,font:{size:10}}},tooltip:{callbacks:{title:c=>c[0].label+'% fuel',label:c=>c.dataset.label+': '+c.parsed.y+' events',footer:c=>{const i=c[0].dataIndex;return fh[i]+' total ('+Math.round(fh[i]/fhTot*100)+'% of shift)'+(fhMan[i]?' · '+fhMan[i]+' manually assigned':'');}}}},scales:{x:{stacked:true,ticks:{font:{size:9}}},y:{stacked:true,title:{display:true,text:'events'},ticks:{font:{size:10}}}}},plugins:[fuelPct]});
+    {label:'events',data:fh,backgroundColor:fh.map((_,i)=>fe[i]<8?'#e23b32':(fe[i]<40?'#1f9e8b':'#9aa0ab'))}
+  ]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:12,right:28}},plugins:{legend:{display:false},tooltip:{callbacks:{title:c=>c[0].label+'% fuel',label:c=>c.parsed.y+' events ('+Math.round(c.parsed.y/fhTot*100)+'% of day)'}}},scales:{x:{ticks:{font:{size:9}}},y:{title:{display:true,text:'events'},ticks:{font:{size:10}}}}},plugins:[fuelPct,fuelAvgLine]});
 }
 const AVMET=[['PA','PA','bPA'],['UA','UA','bUA'],['OE','OE','bOE'],['POE','POE',null]];
 function sparkCycle(hourly){   // avg truck cycle time (mm:ss) per hour for a shovel→dump lane, with grid + point labels
@@ -5917,6 +5882,7 @@ function renderTab(){
   else if(tab==='snapshot'){try{renderSnapshot();}catch(e){console.error(e);}}
   else if(tab==='blend'){try{renderBlend();}catch(e){console.error(e);}}
   else if(tab==='pulse'){try{renderPulse();}catch(e){console.error(e);}}
+  else if(tab==='playbook'){try{renderPlaybook();}catch(e){console.error(e);}}
   else if(tab==='trends'){try{renderTrends();}catch(e){console.error(e);}}
   else if(tab==='balance'){renderCards();}
   else if(tab==='sandbox'){try{renderSandbox();}catch(e){console.error(e);}}
