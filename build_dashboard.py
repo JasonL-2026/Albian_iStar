@@ -2446,6 +2446,7 @@ body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.4 -apple-system,
 .sidenav-controls .toggle button{flex:1;padding:7px 8px;font-size:13px}
 .ovsection{position:relative}
 .updated{position:absolute;top:12px;right:14px;padding:2px 10px;border-radius:10px;background:#eef2f7;border:1px solid #d7dee8;color:#5a6472;font-size:11px;font-weight:600;white-space:nowrap}
+.page-updated{z-index:2}
 .owbtn{margin:8px 0;border:1px solid #cfd4dd;background:#fff;border-radius:8px;padding:7px 14px;font-weight:600;color:var(--blue);cursor:pointer;font-size:12.5px}
 .owbtn:hover{background:#f4f6fa}
 .owbtn.on{background:#e8eef8;border-color:#3f51b5;color:#243b8a}
@@ -6429,7 +6430,25 @@ function renderSnapshot(){
 function renderAll(){
   renderToggle();
   const m=SD().meta;
-  document.getElementById('ovUpdated').textContent='Last updated '+DATA.meta.generated;
+  const updatedText='Last updated '+DATA.meta.generated;
+  document.getElementById('ovUpdated').textContent=updatedText;
+  document.querySelectorAll('.page').forEach(function(pg){
+    const sec=pg.querySelector(':scope > .section');
+    if(!sec) return;
+    sec.style.position=sec.style.position||'relative';
+    let badge=sec.querySelector(':scope > .updated.page-updated');
+    if(pg.id==='pg-overview'){
+      const ov=sec.querySelector(':scope > #ovUpdated');
+      if(ov) ov.textContent=updatedText;
+      return;
+    }
+    if(!badge){
+      badge=document.createElement('div');
+      badge.className='updated page-updated';
+      sec.insertBefore(badge, sec.firstChild);
+    }
+    badge.textContent=updatedText;
+  });
   document.getElementById('gen').textContent='Generated '+DATA.meta.generated+
     '  ·  payload target '+DATA.meta.payloadTarget+'t  ·  full-leg fraction '+m.fullLegFrac+
     ' (loaded '+m.vFull+' km/h, empty '+m.vEmpty+' km/h)';
