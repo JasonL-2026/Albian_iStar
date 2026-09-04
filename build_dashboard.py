@@ -2779,7 +2779,7 @@ body.sb-auto .pagenav{display:flex}
 <div class="layout">
   <nav class="sidenav" id="sidenav">
     <div class="sidenav-logo">
-      <img src="istarlogov2.png" alt="CNRL iSTAR logo">
+      <img src="https://github.com/user-attachments/assets/d258c096-68f1-4f87-8919-c0d0cab5eba6" alt="CNRL iSTAR logo" onerror="this.onerror=null;this.src='istarlogov2.png';">
     </div>
     <div class="sidenav-controls">
       <div class="shiftnav" id="shiftnav"></div>
