@@ -6317,10 +6317,17 @@ function renderPlaybook(){
   const latestPlan=(_latestPlanIdx>=0&&cumTarget[_latestPlanIdx]!=null)?cumTarget[_latestPlanIdx]:null;
   const fmt2=v=>(v==null?'—':Math.round(v).toLocaleString());
   const clr=v=>(v==null?'#888':v>=100?'#2f7a44':v>=90?'#b8830a':'#c0392b');
-  const MIN_CHALLENGE_LOSS_T=30000;
+  const CHALLENGE_PRIORITY_TPH={1:4000,2:2000};
+  const challengeHours=Math.max(1,(reviewShifts().length||1)*12);
   const SHOV_WF_ROWS=[['Payload','Payload'],['Spot','Spot at Shovel'],['Load','Load Time'],['Hang','Hang Time']];
   const TRUCK_WF_ROWS=ORDER.map(k=>[k,ROWLABEL[k]||k]);
   function asRiskTon(v){const n=Number(v||0); return Number.isFinite(n)&&n<0?Math.abs(n):0;}
+  function challengePriority(tons){
+    const tph=(Number(tons)||0)/challengeHours;
+    if(tph>=CHALLENGE_PRIORITY_TPH[1]) return {priority:1,tph};
+    if(tph>=CHALLENGE_PRIORITY_TPH[2]) return {priority:2,tph};
+    return {priority:null,tph};
+  }
   function top3CulpritsText(cmap){
     const ent=Object.entries(cmap||{}).filter(x=>x[0]&&Number(x[1])>0).sort((a,b)=>Number(b[1])-Number(a[1])).slice(0,3);
     return ent.length?ent.map(([k,v])=>`${k} (${fmt(Math.round(v))} t)`).join(' · '):'—';
@@ -6401,6 +6408,7 @@ function renderPlaybook(){
     });
     return Object.values(byKey)
       .map(r=>({
+        ...challengePriority(r.tonnes_at_risk),
         area:kind+' Waterfall',
         measure:r.measure,
         detail:'',
@@ -6411,14 +6419,15 @@ function renderPlaybook(){
         culprit:top3CulpritsText(r.culprit||{}),
         tab:r.tab
       }))
-      .filter(r=>(r.tonnes_at_risk||0)>MIN_CHALLENGE_LOSS_T)
-      .sort((a,b)=>(b.tonnes_at_risk||0)-(a.tonnes_at_risk||0));
+      .filter(r=>r.priority!=null)
+      .sort((a,b)=>(a.priority-b.priority)||((b.tonnes_at_risk||0)-(a.tonnes_at_risk||0)));
   }
   function challengeTable(title,rows,borderColor){
     let s=`<div style="margin-bottom:14px"><div style="font-weight:700;font-size:13px;color:${borderColor};padding:8px 6px 6px;background:#f8f9fb;border-top:2px solid ${borderColor}">${title}</div>`;
-    if(!rows.length) return s+`<div class="foot" style="padding:8px 6px">No affected KPIs above ${MIN_CHALLENGE_LOSS_T.toLocaleString()} t loss for ${reviewLabel()}.</div></div>`;
+    if(!rows.length) return s+`<div class="foot" style="padding:8px 6px">No affected KPIs at or above ${fmt(CHALLENGE_PRIORITY_TPH[2])} t/h for ${reviewLabel()}.</div></div>`;
     s+=`<table class="lanetab" style="width:100%"><thead><tr>`
       +`<th style="text-align:left">Affected KPI</th>`
+      +`<th style="text-align:left;white-space:nowrap">Priority</th>`
       +`<th style="text-align:left;min-width:220px">Top 3 Culprit Shovels</th>`
       +`<th style="text-align:right;white-space:nowrap;min-width:100px">Gap</th><th style="width:60px"></th>`
       +`</tr></thead><tbody>`;
@@ -6426,12 +6435,13 @@ function renderPlaybook(){
       const genPayload=encodeURIComponent(JSON.stringify({
         area:r.area||'', measure:r.measure||'', detail:r.detail||'', tab:r.tab||'',
         actual_label:r.actual_label||'', baseline_label:r.baseline_label||'',
-        gap_label:r.gap_label||'', tonnes_at_risk:(r.tonnes_at_risk!=null?r.tonnes_at_risk:'')
+        gap_label:r.gap_label||'', tonnes_at_risk:(r.tonnes_at_risk!=null?r.tonnes_at_risk:''), priority:r.priority||''
       }));
       s+=`<tr>
         <td style="font-size:13px;text-align:left">${escH(r.measure)}</td>
+        <td style="font-size:13px;text-align:left;white-space:nowrap"><span style="font-weight:700;color:${pCol[r.priority]||'#666'}">${escH(pLbl[r.priority]||'')}</span><span style="color:var(--muted)"> (${fmt(Math.round(r.tph||0))} t/h)</span></td>
         <td style="font-size:13px;text-align:left">${escH(r.culprit||'—')}</td>
-        <td style="text-align:right;font-weight:700;color:#b71c1c;font-size:13px;white-space:nowrap">${escH(r.gap_label)}</td>
+        <td style="text-align:right;font-weight:700;color:${pCol[r.priority]||'#b71c1c'};font-size:13px;white-space:nowrap">${escH(r.gap_label)}</td>
         <td style="text-align:center"><button class="tlbtn" onclick="pbS3GenerateAction('${genPayload}')">Generate Action</button></td>
       </tr>`;
     });
