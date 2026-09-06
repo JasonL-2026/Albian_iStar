@@ -2911,6 +2911,8 @@ body.sb-auto .pagenav{display:flex}
 .pagenav button:hover:not(:disabled){background:#f2f5fa;border-color:var(--blue);color:var(--blue)}
 .pagenav button:disabled{opacity:.4;cursor:default}
 .pagenav .pglbl{font-size:12px;color:var(--muted);font-weight:600}
+.backbtn{position:fixed;top:9px;left:16px;z-index:65;border:1px solid #cfd4dd;background:#fff;color:#566;border-radius:8px;padding:7px 12px;font-weight:600;font-size:12.5px;line-height:1;cursor:pointer;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.12);text-decoration:none}
+.backbtn:hover{background:#f2f5fa;border-color:var(--blue);color:var(--blue)}
 .prtbtn{position:fixed;top:9px;right:16px;z-index:65;border:1px solid #cfd4dd;background:#fff;color:#566;border-radius:8px;padding:4px 9px;font-size:16px;line-height:1;cursor:pointer;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.12)}
 .prtbtn:hover{background:var(--blue);color:#fff;border-color:var(--blue)}
 .prtbtn:hover{background:#f2f5fa;border-color:var(--blue);color:var(--blue)}
@@ -2920,7 +2922,7 @@ body.sb-auto .pagenav{display:flex}
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   body,.wrap{background:#fff}
   .wrap{padding:0}
-  .sidenav,#shiftnav,#toggle,.prtbtn,#sbShow,#sbArrow,#sbEdge,.pagenav{display:none!important}
+  .sidenav,#shiftnav,#toggle,.backbtn,.prtbtn,#sbShow,#sbArrow,#sbEdge,.pagenav{display:none!important}
   .layout{display:block}
   .content{min-width:0}
   .topbar{margin-bottom:8px}
@@ -2932,6 +2934,7 @@ body.sb-auto .pagenav{display:flex}
   h2{break-after:avoid}
 }
 </style></head><body><div class="wrap">
+<a class="backbtn" href="Albian_Mine_Operations_Portal.html" title="Back to Albian Mine Operations Portal">&#8249; Portal</a>
 <button id="sbShow" onclick="toggleSidebar()" title="Show sidebar">&#8250;</button>
 <button id="sbArrow" onclick="toggleSidebar()" title="Hide sidebar">&#8249;</button>
 <div id="sbEdge"></div>
