@@ -2,7 +2,7 @@
 REM ============================================================
 REM  Albian Mine Haulage Dashboard - one-click updater (Windows)
 REM  Double-click after refreshing the CSVs in Data\ and Budget\.
-REM  Regenerates Haulage_Dashboard.html. No admin rights needed.
+REM  Regenerates Haulage_Dashboard.html and TrendHaul_dashboard.html. No admin rights needed.
 REM
 REM  Usage:
 REM    Double-click (or run with no args) — build once and exit.
@@ -13,7 +13,7 @@ REM
 REM  Cron-equivalent via Task Scheduler:
 REM    schtasks /create /tn "AlbianDashboard" /tr "\"<path>\Update Dashboard.bat\" /auto" /sc MINUTE /mo 5 /f
 REM
-REM  If it can't find Python: open build_dashboard_windows.py in
+REM  If it can't find Python: open build_dashboard.py in
 REM  VS Code, run   import sys; print(sys.executable)   copy the
 REM  path it prints, and paste it into a text file named
 REM  python_path.txt in this same folder. Then run this again.
@@ -28,7 +28,7 @@ if /i "%~1"=="/auto" set "NOPAUSE=1"
 if /i "%~1"=="/watch" set "WATCHMODE=1"
 
 echo.
-echo Updating Albian Mine Haulage Dashboard...
+echo Updating Albian Mine Haulage Dashboards...
 echo Folder: %~dp0
 echo.
 
@@ -67,7 +67,7 @@ if not defined PYEXE (
 if not defined PYEXE (
   echo ERROR: Could not find Python automatically.
   echo.
-  echo   1^) Open build_dashboard_windows.py in VS Code
+  echo   1^) Open build_dashboard.py in VS Code
   echo   2^) In the terminal / a cell run:  import sys; print^(sys.executable^)
   echo   3^) Copy the full path it prints ^(ends in python.exe^)
   echo   4^) Paste it into a new text file named  python_path.txt  in THIS folder
@@ -84,18 +84,18 @@ if defined WATCHMODE (
   echo Watch mode: rebuilding every 5 minutes. Close this window to stop.
   echo.
   :watchloop
-  echo %DATE% %TIME%  Building dashboard...
-  "%PYEXE%" "%~dp0build_dashboard_windows.py"
+  echo %DATE% %TIME%  Building dashboards...
+  call :run_builds
   if errorlevel 1 (
     echo   Build FAILED - see the messages above.
   ) else (
-    echo   Done. Haulage_Dashboard.html updated.
+    echo   Done. Haulage_Dashboard.html and TrendHaul_dashboard.html updated.
   )
   TIMEOUT /T 300 /NOBREAK >nul
   goto watchloop
 )
 
-"%PYEXE%" "%~dp0build_dashboard_windows.py"
+call :run_builds
 if errorlevel 1 (
   echo.
   echo Update FAILED - see the messages above.
@@ -104,7 +104,16 @@ if errorlevel 1 (
 )
 
 echo.
-echo Done. Haulage_Dashboard.html has been updated.
+echo Done. Haulage_Dashboard.html and TrendHaul_dashboard.html have been updated.
 echo.
 if not defined NOPAUSE pause
+exit /b 0
+
+:run_builds
+echo   Running build_dashboard.py...
+"%PYEXE%" "%~dp0build_dashboard.py"
+if errorlevel 1 exit /b 1
+echo   Running Trendbuild_dashboard.py...
+"%PYEXE%" "%~dp0Trendbuild_dashboard.py"
+if errorlevel 1 exit /b 1
 exit /b 0
