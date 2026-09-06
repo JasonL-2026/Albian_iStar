@@ -5654,69 +5654,135 @@ function renderPlaybook(){
   const latestPlan=(_latestPlanIdx>=0&&cumTarget[_latestPlanIdx]!=null)?cumTarget[_latestPlanIdx]:null;
   const fmt2=v=>(v==null?'—':Math.round(v).toLocaleString());
   const clr=v=>(v==null?'#888':v>=100?'#2f7a44':v>=90?'#b8830a':'#c0392b');
+  const MIN_CHALLENGE_LOSS_T=30000;
+  const SHOV_WF_ROWS=[['Payload','Payload'],['Spot','Spot at Shovel'],['Load','Load Time'],['Hang','Hang Time']];
+  const TRUCK_WF_ROWS=ORDER.map(k=>[k,ROWLABEL[k]||k]);
+  function asRiskTon(v){const n=Number(v||0); return Number.isFinite(n)&&n<0?Math.abs(n):0;}
+  function top3CulpritsText(cmap){
+    const ent=Object.entries(cmap||{}).filter(x=>x[0]&&Number(x[1])>0).sort((a,b)=>Number(b[1])-Number(a[1])).slice(0,3);
+    return ent.length?ent.map(([k,v])=>`${k} (${fmt(Math.round(v))} t)`).join(' · '):'—';
+  }
+  function buildNegRows(kind,rowDefs,tabId,wfKey){
+    const byKey={};
+    const vv=V();
+    const wf=vv?vv[wfKey]:null;
+    if(!wf) return [];
+    const av=wf.availDecomp||null;
+    if(av){
+      [['PA','pa'],['UA','ua'],['OE','oe']].forEach(([label,key])=>{
+        const totalDelta=Number((av[key]&&av[key].t)||0);
+        const totalRisk=asRiskTon(totalDelta);
+        if(!totalRisk) return;
+        const k='AV::'+label;
+        if(!byKey[k]) byKey[k]={measure:label,tonnes_at_risk:0,culprit:{},tab:tabId};
+        byKey[k].tonnes_at_risk+=totalRisk;
+        if(kind==='Shovel'){
+          const units=(wf.units||[]);
+          let assigned=0;
+          units.forEach(u=>{
+            const d=Number((u.availDecomp&&u.availDecomp[key]&&u.availDecomp[key].t)||0);
+            const risk=asRiskTon(d);
+            if(!risk) return;
+            const su=String(u.unit||'Unknown');
+            byKey[k].culprit[su]=(byKey[k].culprit[su]||0)+risk;
+            assigned+=risk;
+          });
+          if(assigned<=0){
+            const potSum=units.reduce((a,u)=>a+Math.max(0,Number(u.potential||0)),0);
+            units.forEach(u=>{
+              const su=String(u.unit||'Unknown');
+              const sh=(potSum>0?Math.max(0,Number(u.potential||0))/potSum:0);
+              byKey[k].culprit[su]=(byKey[k].culprit[su]||0)+(totalRisk*sh);
+            });
+          }
+        }else{
+          const lanes=(wf.lanes||[]);
+          const potSum=lanes.reduce((a,l)=>a+Math.max(0,Number(l.pot||0)),0);
+          lanes.forEach(l=>{
+            const su=String(l.shovel||'Unknown');
+            const sh=(potSum>0?Math.max(0,Number(l.pot||0))/potSum:0);
+            if(sh<=0) return;
+            byKey[k].culprit[su]=(byKey[k].culprit[su]||0)+(totalRisk*sh);
+          });
+        }
+      });
+    }
+    rowDefs.forEach(([rk,label])=>{
+      const totalDelta=Number((wf.rows&&wf.rows[rk])||0);
+      const totalRisk=asRiskTon(totalDelta);
+      if(!totalRisk) return;
+      const k='ROW::'+label;
+      if(!byKey[k]) byKey[k]={measure:label,tonnes_at_risk:0,culprit:{},tab:tabId};
+      byKey[k].tonnes_at_risk+=totalRisk;
+      if(kind==='Shovel'){
+        (wf.units||[]).forEach(u=>{
+          const d=Number((u.rows&&u.rows[rk])||0);
+          const risk=asRiskTon(d);
+          if(!risk) return;
+          const su=String(u.unit||'Unknown');
+          byKey[k].culprit[su]=(byKey[k].culprit[su]||0)+risk;
+        });
+      }else{
+        (wf.lanes||[]).forEach(l=>{
+          const d=Number((l.rows&&l.rows[rk])||0);
+          const risk=asRiskTon(d);
+          if(!risk) return;
+          const su=String(l.shovel||'Unknown');
+          byKey[k].culprit[su]=(byKey[k].culprit[su]||0)+risk;
+        });
+      }
+    });
+    return Object.values(byKey)
+      .map(r=>({
+        area:kind+' Waterfall',
+        measure:r.measure,
+        detail:'',
+        actual_label:'',
+        baseline_label:'',
+        gap_label:'−'+fmt(r.tonnes_at_risk)+' t',
+        tonnes_at_risk:r.tonnes_at_risk,
+        culprit:top3CulpritsText(r.culprit||{}),
+        tab:r.tab
+      }))
+      .filter(r=>(r.tonnes_at_risk||0)>MIN_CHALLENGE_LOSS_T)
+      .sort((a,b)=>(b.tonnes_at_risk||0)-(a.tonnes_at_risk||0));
+  }
+  function challengeTable(title,rows,borderColor){
+    let s=`<div style="margin-bottom:14px"><div style="font-weight:700;font-size:13px;color:${borderColor};padding:8px 6px 6px;background:#f8f9fb;border-top:2px solid ${borderColor}">${title}</div>`;
+    if(!rows.length) return s+`<div class="foot" style="padding:8px 6px">No affected KPIs above ${MIN_CHALLENGE_LOSS_T.toLocaleString()} t loss for the selected shift.</div></div>`;
+    s+=`<table class="lanetab" style="width:100%"><thead><tr>`
+      +`<th style="text-align:left">Affected KPI</th>`
+      +`<th style="text-align:left;min-width:220px">Top 3 Culprit Shovels</th>`
+      +`<th style="text-align:right;white-space:nowrap;min-width:100px">Gap</th><th style="width:60px"></th>`
+      +`</tr></thead><tbody>`;
+    rows.forEach(r=>{
+      const genPayload=encodeURIComponent(JSON.stringify({
+        area:r.area||'', measure:r.measure||'', detail:r.detail||'', tab:r.tab||'',
+        actual_label:r.actual_label||'', baseline_label:r.baseline_label||'',
+        gap_label:r.gap_label||'', tonnes_at_risk:(r.tonnes_at_risk!=null?r.tonnes_at_risk:'')
+      }));
+      s+=`<tr>
+        <td style="font-size:13px;text-align:left">${escH(r.measure)}</td>
+        <td style="font-size:13px;text-align:left">${escH(r.culprit||'—')}</td>
+        <td style="text-align:right;font-weight:700;color:#b71c1c;font-size:13px;white-space:nowrap">${escH(r.gap_label)}</td>
+        <td style="text-align:center"><button class="tlbtn" onclick="pbS3GenerateAction('${genPayload}')">Generate Action</button></td>
+      </tr>`;
+    });
+    return s+`</tbody></table></div>`;
+  }
   let h='';
 
   // =========================================================
   // SECTION 1 — SHIFT HANDOVER & DAILY EXECUTION PLAN
   // =========================================================
+  const shovChallenges=buildNegRows('Shovel',SHOV_WF_ROWS,'loading','shovelWF2');
+  const truckChallenges=buildNegRows('Truck',TRUCK_WF_ROWS,'trucks','trucksWF');
   h+=`<div id="playbook-shift-handover" style="margin-bottom:24px">`;
-  h+=`<h3 style="margin:0 0 6px;font-size:20px;color:#2b2f36;border-bottom:2px solid #3f51b5;padding-bottom:6px">Shift Priorities</h3>`;
-  if(!recs.length){
-    h+=`<div class="foot">All cycle components are at or within budget for this view. No handover actions required.</div>`;
-  } else {
-    h+=`<table class="lanetab" style="width:100%"><thead><tr>`;
-    h+=`<th style="text-align:left;width:160px;white-space:nowrap">Area</th><th style="text-align:left">Justification</th>`;
-    h+=`<th style="text-align:right;white-space:nowrap;min-width:100px">Actual</th><th style="text-align:right;white-space:nowrap;min-width:100px">Budget</th>`;
-    h+=`<th style="text-align:right;white-space:nowrap;min-width:100px">Gap</th><th style="text-align:right;white-space:nowrap;min-width:110px">Tonnes at Risk</th><th style="width:60px"></th>`;
-    h+=`</tr></thead><tbody>`;
-    const fixFirstTabs=new Set(['loading','haulage']);
-    const fixFirst=recs.filter(r=>fixFirstTabs.has(r.tab));
-    const remaining=recs.filter(r=>!fixFirstTabs.has(r.tab));
-    if(fixFirst.length){
-      h+=`<tr><td colspan="7" style="font-weight:700;font-size:13px;color:#b71c1c;padding:8px 6px 4px;background:#fff6f6;border-top:2px solid #b71c1c">Fix First Priorities</td></tr>`;
-      fixFirst.forEach((r,ix)=>{
-        const rCol=pCol[r.priority]||'#b71c1c';
-        const genPayload=encodeURIComponent(JSON.stringify({
-          area:r.area||'', measure:r.measure||'', detail:r.detail||'', tab:r.tab||'',
-          actual_label:r.actual_label||'', baseline_label:r.baseline_label||'',
-          gap_label:r.gap_label||'', tonnes_at_risk:(r.tonnes_at_risk!=null?r.tonnes_at_risk:''),
-          priority:r.priority||''
-        }));
-        h+=`<tr>
-          <td style="font-weight:600;white-space:nowrap;font-size:13px">${r.area}</td>
-          <td style="font-size:13px;text-align:left">${r.measure}: ${escH(r.detail||'')}</td>
-          <td style="text-align:right;font-size:13px;white-space:nowrap">${r.actual_label}</td>
-          <td style="text-align:right;font-size:13px;white-space:nowrap">${r.baseline_label}</td>
-          <td style="text-align:right;font-weight:700;color:${rCol};font-size:13px;white-space:nowrap">${r.gap_label}</td>
-          <td style="text-align:right;font-weight:700;color:${rCol};font-size:13px;white-space:nowrap">${r.tonnes_at_risk!=null?r.tonnes_at_risk.toLocaleString()+' t':'—'}</td>
-          <td style="text-align:center"><button class="tlbtn" onclick="pbS3GenerateAction('${genPayload}')">Generate Action</button></td>
-        </tr>`;
-      });
-    }
-    [1,2,3].forEach(p=>{
-      const grp=remaining.filter(r=>r.priority===p);
-      if(!grp.length)return;
-      h+=`<tr><td colspan="7" style="font-weight:700;font-size:13px;color:${pCol[p]};padding:8px 6px 4px;background:#f8f9fb;border-top:2px solid ${pCol[p]}">${pLbl[p]}-Priority Actions</td></tr>`;
-      grp.forEach((r,ix)=>{
-        const genPayload=encodeURIComponent(JSON.stringify({
-          area:r.area||'', measure:r.measure||'', detail:r.detail||'', tab:r.tab||'',
-          actual_label:r.actual_label||'', baseline_label:r.baseline_label||'',
-          gap_label:r.gap_label||'', tonnes_at_risk:(r.tonnes_at_risk!=null?r.tonnes_at_risk:''),
-          priority:r.priority||''
-        }));
-        h+=`<tr>
-          <td style="font-weight:600;white-space:nowrap;font-size:13px">${r.area}</td>
-          <td style="font-size:13px;text-align:left">${r.measure}: ${escH(r.detail||'')}</td>
-          <td style="text-align:right;font-size:13px;white-space:nowrap">${r.actual_label}</td>
-          <td style="text-align:right;font-size:13px;white-space:nowrap">${r.baseline_label}</td>
-          <td style="text-align:right;font-weight:700;color:${pCol[p]};font-size:13px;white-space:nowrap">${r.gap_label}</td>
-          <td style="text-align:right;font-weight:700;color:${pCol[p]};font-size:13px;white-space:nowrap">${r.tonnes_at_risk!=null?r.tonnes_at_risk.toLocaleString()+' t':'—'}</td>
-          <td style="text-align:center"><button class="tlbtn" onclick="pbS3GenerateAction('${genPayload}')">Generate Action</button></td>
-        </tr>`;
-      });
-    });
-    h+=`</tbody></table>`;
-  }
+  h+=`<h3 style="margin:0 0 6px;font-size:20px;color:#2b2f36;border-bottom:2px solid #3f51b5;padding-bottom:6px">Shift Challenges Summary</h3>`;
+  h+=`<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:start">`;
+  h+=challengeTable('Shovel Challenges Observed',shovChallenges,'#1d6fa4');
+  h+=challengeTable('Truck Challenges Observed',truckChallenges,'#8a2c22');
+  h+=`</div>`;
 
   h+=`</div>`;
 
