@@ -5660,7 +5660,7 @@ function renderPlaybook(){
   const latestPlan=(_latestPlanIdx>=0&&cumTarget[_latestPlanIdx]!=null)?cumTarget[_latestPlanIdx]:null;
   const fmt2=v=>(v==null?'—':Math.round(v).toLocaleString());
   const clr=v=>(v==null?'#888':v>=100?'#2f7a44':v>=90?'#b8830a':'#c0392b');
-  const CHALLENGE_PRIORITY_TPH={1:4000,2:2000};
+  const CHALLENGE_PRIORITY_TPH={1:2000,2:1000};
   const FULL_SHIFT_HOURS=12;
   const HIGH_PRIORITY_PROJECTED_SHIFT_T=30000;
   function elapsedHoursFromSeries(series,fallbackSlots){
