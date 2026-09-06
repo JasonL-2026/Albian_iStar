@@ -2853,6 +2853,7 @@ table.wf td.lead .ta{color:#2b2f36;font-weight:600}
 .sidenav{flex:0 0 clamp(200px,15vw,320px);position:sticky;top:14px;display:flex;flex-direction:column;gap:6px}
 .sidenav-logo{width:100%;padding:8px 6px 20px;text-align:center}
 .sidenav-logo img{width:100%;max-width:312px;height:auto;display:block;margin:0 auto}
+.sidenav-logo-label{margin-top:6px;font:400 24px/1.05 "Vineta BT","Bookman Old Style",Georgia,serif;letter-spacing:.8px;color:#5f6f7c;background:none;text-shadow:none;text-transform:uppercase}
 .sidenav button{text-align:left;border:1px solid #cfd4dd;background:#fff;border-radius:8px;padding:10px 14px;font-weight:600;color:#566;cursor:pointer;font-size:16px;line-height:1.2;white-space:nowrap}
 .sidenav button.on{background:var(--blue);color:#fff;border-color:var(--blue)}
 .sidenav button.sub{margin-left:18px;width:calc(100% - 18px);font-size:14px;padding:8px 12px;color:#6b7280;border-color:#dde1e8;position:relative}
@@ -2879,6 +2880,8 @@ body.sb-auto .pagenav{display:flex}
 .pagenav button:hover:not(:disabled){background:#f2f5fa;border-color:var(--blue);color:var(--blue)}
 .pagenav button:disabled{opacity:.4;cursor:default}
 .pagenav .pglbl{font-size:12px;color:var(--muted);font-weight:600}
+.backbtn{position:fixed;top:9px;left:16px;z-index:65;border:1px solid #cfd4dd;background:#fff;color:#566;border-radius:8px;padding:7px 12px;font-weight:600;font-size:12.5px;line-height:1;cursor:pointer;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.12);text-decoration:none}
+.backbtn:hover{background:#f2f5fa;border-color:var(--blue);color:var(--blue)}
 .prtbtn{position:fixed;top:9px;right:16px;z-index:65;border:1px solid #cfd4dd;background:#fff;color:#566;border-radius:8px;padding:4px 9px;font-size:16px;line-height:1;cursor:pointer;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.12)}
 .prtbtn:hover{background:var(--blue);color:#fff;border-color:var(--blue)}
 .prtbtn:hover{background:#f2f5fa;border-color:var(--blue);color:var(--blue)}
@@ -2888,7 +2891,7 @@ body.sb-auto .pagenav{display:flex}
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   body,.wrap{background:#fff}
   .wrap{padding:0}
-  .sidenav,#shiftnav,#toggle,.prtbtn,#sbShow,#sbArrow,#sbEdge,.pagenav{display:none!important}
+  .sidenav,#shiftnav,#toggle,.backbtn,.prtbtn,#sbShow,#sbArrow,#sbEdge,.pagenav{display:none!important}
   .layout{display:block}
   .content{min-width:0}
   .topbar{margin-bottom:8px}
@@ -2900,6 +2903,7 @@ body.sb-auto .pagenav{display:flex}
   h2{break-after:avoid}
 }
 </style></head><body><div class="wrap">
+<a class="backbtn" href="Albian_Mine_Operations_Portal.html" title="Back to Albian Mine Operations Portal">&#8249; Portal</a>
 <button id="sbShow" onclick="toggleSidebar()" title="Show sidebar">&#8250;</button>
 <button id="sbArrow" onclick="toggleSidebar()" title="Hide sidebar">&#8249;</button>
 <div id="sbEdge"></div>
@@ -2908,6 +2912,7 @@ body.sb-auto .pagenav{display:flex}
   <nav class="sidenav" id="sidenav">
     <div class="sidenav-logo">
       <img src="https://github.com/user-attachments/assets/d258c096-68f1-4f87-8919-c0d0cab5eba6" alt="CNRL iSTAR logo" onerror="this.onerror=null;this.src='istarlogov2.png';">
+      <div class="sidenav-logo-label">TRENDS</div>
     </div>
     <div class="sidenav-controls">
       <div class="shiftnav" id="shiftnav"></div>
@@ -3006,7 +3011,7 @@ body.sb-auto .pagenav{display:flex}
         <button class="owbtn" id="dBtnT" onclick="toggleTruckBox('dump')">Dumping &#9662;</button>
         <button class="owbtn" id="fBtnT" onclick="toggleTruckBox('full')">Haul Distance &#9662;</button>
         <button class="owbtn" id="tadBtnT" onclick="toggleTrucksAtDump()">Trucks at Dump &#9662;</button>
-        <div class="foot">Payload-normalized basis: rate* = 361 t ÷ budget cycle time, so budget-cycle tonnes = 361/load. Each time row = rate* × (budget − actual) time; Payload row = actual − 361 t. The bridge closes exactly (no residual) and Potential matches the Haulage-Score gauge. Green = gain, red = loss.</div>
+        <div class="foot">Payload-normalized basis: rate* = 361 t ÷ budget cycle time, so budget-cycle tonnes = 361/load. Each time row = rate* × (budget − actual) time; Payload row = actual − 361 t. The bridge closes exactly (no residual) and Potential matches the Haulage-Score gauge. Green = gain, red = loss. Data includes only large shovels and trucks.</div>
         <div class="chartcard widecard" id="secQueT" hidden style="margin-top:10px"><h3>Queue at Shovel per Shovel <span class="sub" style="font-weight:400;color:var(--muted)">(truck queue, actual minutes vs dashed budget tick · grouped by loading shovel)</span></h3><div id="chQueT"></div></div>
         <div class="chartcard widecard" id="secIdleT" hidden style="margin-top:10px"><h3>Dump Idle per Dump <span class="sub" style="font-weight:400;color:var(--muted)">(queue at dump, actual minutes vs dashed budget tick · grouped by dump location)</span></h3><div id="chIdleT"></div></div>
         <div class="chartcard widecard" id="secDumpT" hidden style="margin-top:10px"><h3>Dumping Time per Dump <span class="sub" style="font-weight:400;color:var(--muted)">(actual minutes vs dashed budget tick · grouped by dump location)</span></h3><div id="chDumpT"></div></div>
@@ -3030,6 +3035,7 @@ body.sb-auto .pagenav{display:flex}
         <button class="owbtn" id="stBtnS2" onclick="toggleShovBox('spot')">Spot Time &#9662;</button>
         <button class="owbtn" id="ltBtnS2" onclick="toggleShovBox('load')">Load Time &#9662;</button>
         <button class="owbtn" id="htBtnS2" onclick="toggleShovBox('hang')">Hang Time &#9662;</button>
+        <div class="foot">Data includes only large shovels and trucks.</div>
         <div class="chartcard widecard" id="secPayS2" hidden style="margin-top:10px"><h3>Payload Compliance per Shovel <span class="sub" style="font-weight:400;color:var(--muted)">(box: Q1–Q3 · median line · ◆ mean · dashed 361 t target)</span></h3><div id="chPayS2"></div></div>
         <div class="chartcard widecard" id="secSpotS2" hidden style="margin-top:10px"><h3>Spot Time per Shovel <span class="sub" style="font-weight:400;color:var(--muted)">(actual minutes vs dashed budget tick · the <span style="color:#7a4fd0">purple % above each box</span> = share of the shift spent double-side loading, from ShovelLoadingSide)</span></h3><div id="chSpotS2"></div></div>
         <div class="chartcard widecard" id="secLoadS2" hidden style="margin-top:10px"><h3>Load Time per Shovel <span class="sub" style="font-weight:400;color:var(--muted)">(actual minutes vs dashed budget tick)</span></h3><div id="chLoadS2"></div></div>
@@ -3061,14 +3067,17 @@ body.sb-auto .pagenav{display:flex}
         <div id="loadTop3" class="top3"></div>
         <h4 class="mini">Shovel Loss Matrix <span class="sub" style="font-weight:400;color:var(--muted)">— click a shovel for its status timeline &amp; cycle waterfall</span></h4>
         <div id="shovList2"></div>
+        <div class="foot">Data includes only large shovels and trucks.</div>
       </div>
       <div class="section">
         <h2>Shovel Status Timeline — 24h Avg (Shift Review) <span class="sub" id="tlsub2"></span></h2>
         <div id="chTl2"></div>
+        <div class="foot">Data includes only large shovels and trucks.</div>
       </div>
       <div class="section">
         <h2>Shovel Cycle Waterfall <span class="sub" id="shovwf2sub"></span></h2>
         <div id="shovUnitWF2"></div>
+        <div class="foot">Data includes only large shovels and trucks.</div>
       </div>
     </section>
 
@@ -3078,10 +3087,12 @@ body.sb-auto .pagenav{display:flex}
         <div id="haulTop3" class="top3"></div>
         <h4 class="mini">Haulage Loss Matrix <span class="sub" style="font-weight:400;color:var(--muted)">— paths grouped by loading shovel; redder cell = more tonnes lost; <b>click a path</b> for its waterfall &amp; full-haul-time trend below</span></h4>
         <div id="laneMatrix"></div>
+        <div class="foot">Data includes only large shovels and trucks.</div>
       </div>
       <div class="section">
         <h2>Path Waterfall <span class="sub" id="lanewfsub"></span></h2>
         <div id="lanewf"></div>
+        <div class="foot">Data includes only large shovels and trucks.</div>
       </div>
     </section>
 
@@ -3156,7 +3167,7 @@ body.sb-auto .pagenav{display:flex}
       <div class="section">
         <h2 class="prodhd">Delays &amp; Standbys <span class="sub" id="dssub"></span></h2>
         <div id="dsBody"></div>
-        <div class="foot"><b id="dsFleet">Cat 797</b> <b>Delay</b> and <b>Standby</b> reasons for the selected shift/view, <b>grouped by status</b> and sorted by actual impact (biggest first). <b>Actual % / Target %</b> = each reason's actual (and budgeted `ExpectedDuration`) time as its <b>impact on the affected metric</b> — Delays on <b>OE</b> (÷ Ready+Delay), Standbys on <b>UA</b> (÷ Ready+Delay+Standby); Target blank where no standard exists. <b>+/− tonnes</b> = (target − actual) time × the fleet's TPNOH — green = under target (gain), red = over target (loss); reasons with no target count fully as loss.</div>
+        <div class="foot"><b id="dsFleet">Cat 797</b> <b>Delay</b> and <b>Standby</b> reasons for the selected shift/view, <b>grouped by status</b> and sorted by actual impact (biggest first). <b>Actual % / Target %</b> = each reason's actual (and budgeted `ExpectedDuration`) time as its <b>impact on the affected metric</b> — Delays on <b>OE</b> (÷ Ready+Delay), Standbys on <b>UA</b> (÷ Ready+Delay+Standby); Target blank where no standard exists. <b>+/− tonnes</b> = (target − actual) time × the fleet's TPNOH — green = under target (gain), red = over target (loss); reasons with no target count fully as loss. Data includes only large shovels and trucks.</div>
         <button class="owbtn" id="dsParBtn" onclick="toggleDsChart('par')">Lost-Time Pareto &#9662;</button>
         <button class="owbtn" id="dsDvBtn" onclick="toggleDsChart('dv')">Delay Variance &#9662;</button>
       </div>
@@ -3176,7 +3187,7 @@ body.sb-auto .pagenav{display:flex}
       <div class="section">
         <h2 class="prodhd"><span>Shovel Productivity</span><span class="tptoggles"><button class="tgl on" id="spTgtBtn" onclick="toggleProd('sp','tgt')">Target</button><button class="tgl on" id="spDltBtn" onclick="toggleProd('sp','dlt')">+/− t</button></span><span class="sub" id="spsub"></span></h2>
         <div id="spBody"></div>
-        <div class="foot">Per-shovel KPI scorecard for the selected shift/view — <b>All Shovels</b> plus one column per active unit, each split <b>Target · Actual · +/− tonnes</b>. The header <b>score badge</b> = Actual ÷ Target loaded (<span style="color:#2f8f4e">≥90 green</span> · <span style="color:#c98a1f">70–90 amber</span> · <span style="color:#c0392b">&lt;70 red</span>). <b>Total Loaded target</b> = scheduled potential = total/calendar hours × budget <b>PA</b> × <b>UA</b> × <b>OE</b> × budget <b>Dig Rate</b> (TPNOH); PA + UA + OE + Dig Rate +/− tonnes sum to the Total Loaded gap. <b>NOH</b> = net operating hrs (Ready), <b>NOH %</b> = NOH ÷ TH. Cycle rows (Hang/Spot/Load, mm:ss) show the separate cycle-time tonnage impact. <b>Payload — CAT 797</b> compares the average weighed payload to the 361 t target (+/− tonnes = payload cycle impact). Payload quality vs the 361 t target uses the 10-10-20 rule: <b>&gt;120%</b> should be 0%, <b>110–120%</b> under 10%, <b>Underloads</b> (70–90%) target 5%. +/− tonnes shaded green = gain, red = loss.</div>
+        <div class="foot">Per-shovel KPI scorecard for the selected shift/view — <b>All Shovels</b> plus one column per active unit, each split <b>Target · Actual · +/− tonnes</b>. The header <b>score badge</b> = Actual ÷ Target loaded (<span style="color:#2f8f4e">≥90 green</span> · <span style="color:#c98a1f">70–90 amber</span> · <span style="color:#c0392b">&lt;70 red</span>). <b>Total Loaded target</b> = scheduled potential = total/calendar hours × budget <b>PA</b> × <b>UA</b> × <b>OE</b> × budget <b>Dig Rate</b> (TPNOH); PA + UA + OE + Dig Rate +/− tonnes sum to the Total Loaded gap. <b>NOH</b> = net operating hrs (Ready), <b>NOH %</b> = NOH ÷ TH. Cycle rows (Hang/Spot/Load, mm:ss) show the separate cycle-time tonnage impact. <b>Payload — CAT 797</b> compares the average weighed payload to the 361 t target (+/− tonnes = payload cycle impact). Payload quality vs the 361 t target uses the 10-10-20 rule: <b>&gt;120%</b> should be 0%, <b>110–120%</b> under 10%, <b>Underloads</b> (70–90%) target 5%. +/− tonnes shaded green = gain, red = loss. Data includes only large shovels and trucks.</div>
       </div>
     </section>
 
@@ -3184,7 +3195,7 @@ body.sb-auto .pagenav{display:flex}
       <div class="section">
         <h2 class="prodhd"><span>Truck Productivity</span><span class="tptoggles"><button class="tgl on" id="tpTgtBtn" onclick="toggleProd('tp','tgt')">Target</button><button class="tgl on" id="tpDltBtn" onclick="toggleProd('tp','dlt')">+/− t</button></span><span class="sub" id="tpsub"></span></h2>
         <div id="tpBody"></div>
-        <div class="foot">Cat 797 truck KPI scorecard for the selected shift/view — <b>All Trucks</b> plus one column per active <b>shovel</b> (grouping all trucks that loaded at that shovel), each split <b>Target · Actual · +/− tonnes</b>. The header <b>score badge</b> = Actual ÷ cycle-potential (<span style="color:#2f8f4e">≥90 green</span> · <span style="color:#c98a1f">70–90 amber</span> · <span style="color:#c0392b">&lt;70 red</span>). <b>Total Moved target</b> = payload-normalised cycle potential (rate* × actual cycle seconds; rate* = 361 t ÷ budget cycle). The availability rows use the same PA/UA/OE formulas and sequential tonnes decomposition as the methodology; cycle rows use payload-normalized truck-cycle budgets (361 t basis), and payload quality follows the 10-10-20 rule.</div>
+        <div class="foot">Cat 797 truck KPI scorecard for the selected shift/view — <b>All Trucks</b> plus one column per active <b>shovel</b> (grouping all trucks that loaded at that shovel), each split <b>Target · Actual · +/− tonnes</b>. The header <b>score badge</b> = Actual ÷ cycle-potential (<span style="color:#2f8f4e">≥90 green</span> · <span style="color:#c98a1f">70–90 amber</span> · <span style="color:#c0392b">&lt;70 red</span>). <b>Total Moved target</b> = payload-normalised cycle potential (rate* × actual cycle seconds; rate* = 361 t ÷ budget cycle). The availability rows use the same PA/UA/OE formulas and sequential tonnes decomposition as the methodology; cycle rows use payload-normalized truck-cycle budgets (361 t basis), and payload quality follows the 10-10-20 rule. Data includes only large shovels and trucks.</div>
       </div>
     </section>
 
@@ -4096,6 +4107,7 @@ function drawBalanceTL(tbd){
 }
 function renderLube(){
   const lu=LU();
+  const reviewShiftCount=(reviewShifts().length||1);
   const lubeNote=document.getElementById('lubeNote');
   const lubeReasons=document.getElementById('lubeReasons');
   const lubeLead=document.getElementById('lubeLead');
@@ -4108,7 +4120,7 @@ function renderLube(){
   let rt=`<table class="lanetab"><tr><th>Reason</th><th>Events</th><th>Actual min</th><th>Expected min</th><th>Avg min</th><th>% over</th></tr>`;
   lu.reasons.forEach(r=>rt+=`<tr><td>${r.reason}</td><td>${r.n}</td><td>${r.actual}</td><td>${r.exp}</td><td>${m1(r.avg)}</td><td>${r.over}%</td></tr>`);
   if(lubeReasons) lubeReasons.innerHTML=rt+'</table>';
-  const showShift=reviewCount()>1;
+  const showShift=reviewShiftCount>1;
   let lt=`<table class="lanetab"><tr>${showShift?'<th>Shift</th>':''}<th>Time</th><th>Truck</th><th>Type</th><th>Reason</th><th>Act min</th><th>Exp min</th><th>Over min</th></tr>`;
   lu.leaderboard.forEach(r=>lt+=`<tr>${showShift?`<td>${r.shift||''}</td>`:''}<td>${r.time}</td><td>${r.eqmt}</td><td>${r.type}</td><td>${r.reason}</td><td>${m1(r.actual)}</td><td>${m1(r.exp)}</td><td style="color:${r.over>0?'var(--red)':'var(--green)'};font-weight:700">${r.over>0?'+':''}${m1(r.over)}</td></tr>`);
   if(lubeLead) lubeLead.innerHTML=lt+'</table>';
@@ -4134,7 +4146,7 @@ function renderLube(){
     const sumTa=faRows.reduce((a,r)=>{a.system+=Number(r.truck.system||0);a.manual+=Number(r.truck.manual||0);a.total+=Number(r.truck.total||0);return a;},{system:0,manual:0,total:0});
     const pct=v=>v.total?Math.round(v.system/v.total*100):null;
     const cell=(m)=>m.total?`${pct(m)}% (${m.system}/${m.total})`:'—';
-    const rvCount=reviewCount();
+    const rvCount=reviewShiftCount;
     let ht='<div class="lanewrap"><table class="lanetab"><tr><th>Metric</th><th>Total ('+rvCount+' shift'+(rvCount===1?'':'s')+')</th>'+faRows.map(r=>`<th><div style="font-size:11px;line-height:1.1;color:#6b7280">${r.crew}</div><div>${r.id}</div></th>`).join('')+'</tr>';
     ht+=`<tr><td>Fuel Assignments · System %</td><td><b>${cell(sumFa)}</b></td>${faRows.map(r=>`<td>${cell(r.fuel)}</td>`).join('')}</tr>`;
     ht+=`<tr><td>Truck Assignments · System %</td><td><b>${cell(sumTa)}</b></td>${faRows.map(r=>`<td>${cell(r.truck)}</td>`).join('')}</tr>`;
@@ -6311,10 +6323,34 @@ function renderPlaybook(){
   const latestPlan=(_latestPlanIdx>=0&&cumTarget[_latestPlanIdx]!=null)?cumTarget[_latestPlanIdx]:null;
   const fmt2=v=>(v==null?'—':Math.round(v).toLocaleString());
   const clr=v=>(v==null?'#888':v>=100?'#2f7a44':v>=90?'#b8830a':'#c0392b');
-  const MIN_CHALLENGE_LOSS_T=30000;
+  const CHALLENGE_PRIORITY_TPH={1:2000,2:1000};
+  const FULL_SHIFT_HOURS=12;
+  const HIGH_PRIORITY_PROJECTED_SHIFT_T=30000;
+  function elapsedHoursFromSeries(series,fallbackSlots){
+    let last=-1;
+    (series||[]).forEach((v,i)=>{ if(v!=null) last=i; });
+    if(last>=0) return Math.max(0.25,(last+1)*0.25);
+    const slots=Number(fallbackSlots)||48;
+    return Math.max(1,slots*0.25);
+  }
+  const challengeHours=Math.max(0.25,reviewShifts().reduce((sum,s)=>{
+    const sd=DATA.byShift[s.id];
+    const vv=(sd&&sd.views&&sd.views[view])?sd.views[view]:null;
+    const an=(vv&&vv.analytics)||{};
+    const cAct=(an.cumulative&&an.cumulative.actual)||[];
+    const cTgt=(an.cumulative&&an.cumulative.target)||[];
+    return sum+elapsedHoursFromSeries(cAct,cTgt.length||48);
+  },0)||FULL_SHIFT_HOURS);
   const SHOV_WF_ROWS=[['Payload','Payload'],['Spot','Spot at Shovel'],['Load','Load Time'],['Hang','Hang Time']];
   const TRUCK_WF_ROWS=ORDER.map(k=>[k,ROWLABEL[k]||k]);
   function asRiskTon(v){const n=Number(v||0); return Number.isFinite(n)&&n<0?Math.abs(n):0;}
+  function challengePriority(tons){
+    const tph=(Number(tons)||0)/challengeHours;
+    const projectedFullShiftLoss=tph*FULL_SHIFT_HOURS;
+    if(tph>=CHALLENGE_PRIORITY_TPH[1] || projectedFullShiftLoss>=HIGH_PRIORITY_PROJECTED_SHIFT_T) return {priority:1,tph,projectedFullShiftLoss};
+    if(tph>=CHALLENGE_PRIORITY_TPH[2]) return {priority:2,tph};
+    return {priority:null,tph};
+  }
   function top3CulpritsText(cmap){
     const ent=Object.entries(cmap||{}).filter(x=>x[0]&&Number(x[1])>0).sort((a,b)=>Number(b[1])-Number(a[1])).slice(0,3);
     return ent.length?ent.map(([k,v])=>`${k} (${fmt(Math.round(v))} t)`).join(' · '):'—';
@@ -6395,6 +6431,7 @@ function renderPlaybook(){
     });
     return Object.values(byKey)
       .map(r=>({
+        ...challengePriority(r.tonnes_at_risk),
         area:kind+' Waterfall',
         measure:r.measure,
         detail:'',
@@ -6405,14 +6442,15 @@ function renderPlaybook(){
         culprit:top3CulpritsText(r.culprit||{}),
         tab:r.tab
       }))
-      .filter(r=>(r.tonnes_at_risk||0)>MIN_CHALLENGE_LOSS_T)
-      .sort((a,b)=>(b.tonnes_at_risk||0)-(a.tonnes_at_risk||0));
+      .filter(r=>r.priority!=null)
+      .sort((a,b)=>(a.priority-b.priority)||((b.tonnes_at_risk||0)-(a.tonnes_at_risk||0)));
   }
   function challengeTable(title,rows,borderColor){
     let s=`<div style="margin-bottom:14px"><div style="font-weight:700;font-size:13px;color:${borderColor};padding:8px 6px 6px;background:#f8f9fb;border-top:2px solid ${borderColor}">${title}</div>`;
-    if(!rows.length) return s+`<div class="foot" style="padding:8px 6px">No affected KPIs above ${MIN_CHALLENGE_LOSS_T.toLocaleString()} t loss for ${reviewLabel()}.</div></div>`;
+    if(!rows.length) return s+`<div class="foot" style="padding:8px 6px">No affected KPIs at or above ${fmt(CHALLENGE_PRIORITY_TPH[2])} t/h for ${reviewLabel()}.</div></div>`;
     s+=`<table class="lanetab" style="width:100%"><thead><tr>`
       +`<th style="text-align:left">Affected KPI</th>`
+      +`<th style="text-align:left;white-space:nowrap">Priority</th>`
       +`<th style="text-align:left;min-width:220px">Top 3 Culprit Shovels</th>`
       +`<th style="text-align:right;white-space:nowrap;min-width:100px">Gap</th><th style="width:60px"></th>`
       +`</tr></thead><tbody>`;
@@ -6420,12 +6458,13 @@ function renderPlaybook(){
       const genPayload=encodeURIComponent(JSON.stringify({
         area:r.area||'', measure:r.measure||'', detail:r.detail||'', tab:r.tab||'',
         actual_label:r.actual_label||'', baseline_label:r.baseline_label||'',
-        gap_label:r.gap_label||'', tonnes_at_risk:(r.tonnes_at_risk!=null?r.tonnes_at_risk:'')
+        gap_label:r.gap_label||'', tonnes_at_risk:(r.tonnes_at_risk!=null?r.tonnes_at_risk:''), priority:r.priority||''
       }));
       s+=`<tr>
         <td style="font-size:13px;text-align:left">${escH(r.measure)}</td>
+        <td style="font-size:13px;text-align:left;white-space:nowrap"><span style="font-weight:700;color:${pCol[r.priority]||'#666'}">${escH(pLbl[r.priority]||'')}</span><span style="color:var(--muted)"> (${fmt(Math.round(r.tph||0))} t/h)</span></td>
         <td style="font-size:13px;text-align:left">${escH(r.culprit||'—')}</td>
-        <td style="text-align:right;font-weight:700;color:#b71c1c;font-size:13px;white-space:nowrap">${escH(r.gap_label)}</td>
+        <td style="text-align:right;font-weight:700;color:${pCol[r.priority]||'#b71c1c'};font-size:13px;white-space:nowrap">${escH(r.gap_label)}</td>
         <td style="text-align:center"><button class="tlbtn" onclick="pbS3GenerateAction('${genPayload}')">Generate Action</button></td>
       </tr>`;
     });
