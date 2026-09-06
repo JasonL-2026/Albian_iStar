@@ -2884,7 +2884,7 @@ table.wf td.lead .ta{color:#2b2f36;font-weight:600}
 .sidenav{flex:0 0 clamp(200px,15vw,320px);position:sticky;top:14px;display:flex;flex-direction:column;gap:6px}
 .sidenav-logo{width:100%;padding:8px 6px 20px;text-align:center}
 .sidenav-logo img{width:100%;max-width:312px;height:auto;display:block;margin:0 auto}
-.sidenav-logo-label{margin-top:6px;font-size:22px;line-height:1.1;font-weight:700;color:#566}
+.sidenav-logo-label{margin-top:6px;font:400 24px/1.05 "Vineta BT","Bookman Old Style",Georgia,serif;letter-spacing:.4px;color:#c6a247;background:none;text-shadow:none}
 .sidenav button{text-align:left;border:1px solid #cfd4dd;background:#fff;border-radius:8px;padding:10px 14px;font-weight:600;color:#566;cursor:pointer;font-size:16px;line-height:1.2;white-space:nowrap}
 .sidenav button.on{background:var(--blue);color:#fff;border-color:var(--blue)}
 .sidenav button.sub{margin-left:18px;width:calc(100% - 18px);font-size:14px;padding:8px 12px;color:#6b7280;border-color:#dde1e8;position:relative}
