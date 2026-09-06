@@ -3054,7 +3054,7 @@ body.sb-auto .pagenav{display:flex}
         <button class="owbtn" id="dBtnT" onclick="toggleTruckBox('dump')">Dumping &#9662;</button>
         <button class="owbtn" id="fBtnT" onclick="toggleTruckBox('full')">Haul Distance &#9662;</button>
         <button class="owbtn" id="tadBtnT" onclick="toggleTrucksAtDump()">Trucks at Dump &#9662;</button>
-        <div class="foot">Payload-normalized basis: rate* = 361 t ÷ budget cycle time, so budget-cycle tonnes = 361/load. Each time row = rate* × (budget − actual) time; Payload row = actual − 361 t. The bridge closes exactly (no residual) and Potential matches the Haulage-Score gauge. Green = gain, red = loss.</div>
+        <div class="foot">Payload-normalized basis: rate* = 361 t ÷ budget cycle time, so budget-cycle tonnes = 361/load. Each time row = rate* × (budget − actual) time; Payload row = actual − 361 t. The bridge closes exactly (no residual) and Potential matches the Haulage-Score gauge. Green = gain, red = loss. Data includes only large shovels and trucks.</div>
         <div class="chartcard widecard" id="secQueT" hidden style="margin-top:10px"><h3>Queue at Shovel per Shovel <span class="sub" style="font-weight:400;color:var(--muted)">(truck queue, actual minutes vs dashed budget tick · grouped by loading shovel)</span></h3><div id="chQueT"></div></div>
         <div class="chartcard widecard" id="secIdleT" hidden style="margin-top:10px"><h3>Dump Idle per Dump <span class="sub" style="font-weight:400;color:var(--muted)">(queue at dump, actual minutes vs dashed budget tick · grouped by dump location)</span></h3><div id="chIdleT"></div></div>
         <div class="chartcard widecard" id="secDumpT" hidden style="margin-top:10px"><h3>Dumping Time per Dump <span class="sub" style="font-weight:400;color:var(--muted)">(actual minutes vs dashed budget tick · grouped by dump location)</span></h3><div id="chDumpT"></div></div>
@@ -3078,6 +3078,7 @@ body.sb-auto .pagenav{display:flex}
         <button class="owbtn" id="stBtnS2" onclick="toggleShovBox('spot')">Spot Time &#9662;</button>
         <button class="owbtn" id="ltBtnS2" onclick="toggleShovBox('load')">Load Time &#9662;</button>
         <button class="owbtn" id="htBtnS2" onclick="toggleShovBox('hang')">Hang Time &#9662;</button>
+        <div class="foot">Data includes only large shovels and trucks.</div>
         <div class="chartcard widecard" id="secPayS2" hidden style="margin-top:10px"><h3>Payload Compliance per Shovel <span class="sub" style="font-weight:400;color:var(--muted)">(box: Q1–Q3 · median line · ◆ mean · dashed 361 t target)</span></h3><div id="chPayS2"></div></div>
         <div class="chartcard widecard" id="secSpotS2" hidden style="margin-top:10px"><h3>Spot Time per Shovel <span class="sub" style="font-weight:400;color:var(--muted)">(actual minutes vs dashed budget tick · the <span style="color:#7a4fd0">purple % above each box</span> = share of the shift spent double-side loading, from ShovelLoadingSide)</span></h3><div id="chSpotS2"></div></div>
         <div class="chartcard widecard" id="secLoadS2" hidden style="margin-top:10px"><h3>Load Time per Shovel <span class="sub" style="font-weight:400;color:var(--muted)">(actual minutes vs dashed budget tick)</span></h3><div id="chLoadS2"></div></div>
@@ -3109,14 +3110,17 @@ body.sb-auto .pagenav{display:flex}
         <div id="loadTop3" class="top3"></div>
         <h4 class="mini">Shovel Loss Matrix <span class="sub" style="font-weight:400;color:var(--muted)">— click a shovel for its status timeline &amp; cycle waterfall</span></h4>
         <div id="shovList2"></div>
+        <div class="foot">Data includes only large shovels and trucks.</div>
       </div>
       <div class="section">
         <h2>Shovel Status Timeline <span class="sub" id="tlsub2"></span></h2>
         <div id="chTl2"></div>
+        <div class="foot">Data includes only large shovels and trucks.</div>
       </div>
       <div class="section">
         <h2>Shovel Cycle Waterfall <span class="sub" id="shovwf2sub"></span></h2>
         <div id="shovUnitWF2"></div>
+        <div class="foot">Data includes only large shovels and trucks.</div>
       </div>
     </section>
 
@@ -3126,10 +3130,12 @@ body.sb-auto .pagenav{display:flex}
         <div id="haulTop3" class="top3"></div>
         <h4 class="mini">Haulage Loss Matrix <span class="sub" style="font-weight:400;color:var(--muted)">— paths grouped by loading shovel; redder cell = more tonnes lost; <b>click a path</b> for its waterfall &amp; full-haul-time trend below</span></h4>
         <div id="laneMatrix"></div>
+        <div class="foot">Data includes only large shovels and trucks.</div>
       </div>
       <div class="section">
         <h2>Path Waterfall <span class="sub" id="lanewfsub"></span></h2>
         <div id="lanewf"></div>
+        <div class="foot">Data includes only large shovels and trucks.</div>
       </div>
     </section>
 
@@ -3204,7 +3210,7 @@ body.sb-auto .pagenav{display:flex}
       <div class="section">
         <h2 class="prodhd">Delays &amp; Standbys <span class="sub" id="dssub"></span></h2>
         <div id="dsBody"></div>
-        <div class="foot"><b id="dsFleet">Cat 797</b> <b>Delay</b> and <b>Standby</b> reasons for the selected shift/view, <b>grouped by status</b> and sorted by actual impact (biggest first). <b>Actual % / Target %</b> = each reason's actual (and budgeted `ExpectedDuration`) time as its <b>impact on the affected metric</b> — Delays on <b>OE</b> (÷ Ready+Delay), Standbys on <b>UA</b> (÷ Ready+Delay+Standby); Target blank where no standard exists. <b>+/− tonnes</b> = (target − actual) time × the fleet's TPNOH — green = under target (gain), red = over target (loss); reasons with no target count fully as loss.</div>
+        <div class="foot"><b id="dsFleet">Cat 797</b> <b>Delay</b> and <b>Standby</b> reasons for the selected shift/view, <b>grouped by status</b> and sorted by actual impact (biggest first). <b>Actual % / Target %</b> = each reason's actual (and budgeted `ExpectedDuration`) time as its <b>impact on the affected metric</b> — Delays on <b>OE</b> (÷ Ready+Delay), Standbys on <b>UA</b> (÷ Ready+Delay+Standby); Target blank where no standard exists. <b>+/− tonnes</b> = (target − actual) time × the fleet's TPNOH — green = under target (gain), red = over target (loss); reasons with no target count fully as loss. Data includes only large shovels and trucks.</div>
         <button class="owbtn" id="dsParBtn" onclick="toggleDsChart('par')">Lost-Time Pareto &#9662;</button>
         <button class="owbtn" id="dsDvBtn" onclick="toggleDsChart('dv')">Delay Variance &#9662;</button>
       </div>
@@ -3224,7 +3230,7 @@ body.sb-auto .pagenav{display:flex}
       <div class="section">
         <h2 class="prodhd"><span>Shovel Productivity</span><span class="tptoggles"><button class="tgl on" id="spTgtBtn" onclick="toggleProd('sp','tgt')">Target</button><button class="tgl on" id="spDltBtn" onclick="toggleProd('sp','dlt')">+/− t</button></span><span class="sub" id="spsub"></span></h2>
         <div id="spBody"></div>
-        <div class="foot">Per-shovel KPI scorecard for the selected shift/view — <b>All Shovels</b> plus one column per active unit, each split <b>Target · Actual · +/− tonnes</b>. The header <b>score badge</b> = Actual ÷ Target loaded (<span style="color:#2f8f4e">≥90 green</span> · <span style="color:#c98a1f">70–90 amber</span> · <span style="color:#c0392b">&lt;70 red</span>). <b>Total Loaded target</b> = scheduled potential = total/calendar hours × budget <b>PA</b> × <b>UA</b> × <b>OE</b> × budget <b>Dig Rate</b> (TPNOH); PA + UA + OE + Dig Rate +/− tonnes sum to the Total Loaded gap. <b>NOH</b> = net operating hrs (Ready), <b>NOH %</b> = NOH ÷ TH. Cycle rows (Hang/Spot/Load, mm:ss) show the separate cycle-time tonnage impact. <b>Payload — CAT 797</b> compares the average weighed payload to the 361 t target (+/− tonnes = payload cycle impact). Payload quality vs the 361 t target uses the 10-10-20 rule: <b>&gt;120%</b> should be 0%, <b>110–120%</b> under 10%, <b>Underloads</b> (70–90%) target 5%. +/− tonnes shaded green = gain, red = loss.</div>
+        <div class="foot">Per-shovel KPI scorecard for the selected shift/view — <b>All Shovels</b> plus one column per active unit, each split <b>Target · Actual · +/− tonnes</b>. The header <b>score badge</b> = Actual ÷ Target loaded (<span style="color:#2f8f4e">≥90 green</span> · <span style="color:#c98a1f">70–90 amber</span> · <span style="color:#c0392b">&lt;70 red</span>). <b>Total Loaded target</b> = scheduled potential = total/calendar hours × budget <b>PA</b> × <b>UA</b> × <b>OE</b> × budget <b>Dig Rate</b> (TPNOH); PA + UA + OE + Dig Rate +/− tonnes sum to the Total Loaded gap. <b>NOH</b> = net operating hrs (Ready), <b>NOH %</b> = NOH ÷ TH. Cycle rows (Hang/Spot/Load, mm:ss) show the separate cycle-time tonnage impact. <b>Payload — CAT 797</b> compares the average weighed payload to the 361 t target (+/− tonnes = payload cycle impact). Payload quality vs the 361 t target uses the 10-10-20 rule: <b>&gt;120%</b> should be 0%, <b>110–120%</b> under 10%, <b>Underloads</b> (70–90%) target 5%. +/− tonnes shaded green = gain, red = loss. Data includes only large shovels and trucks.</div>
       </div>
     </section>
 
@@ -3232,7 +3238,7 @@ body.sb-auto .pagenav{display:flex}
       <div class="section">
         <h2 class="prodhd"><span>Truck Productivity</span><span class="tptoggles"><button class="tgl on" id="tpTgtBtn" onclick="toggleProd('tp','tgt')">Target</button><button class="tgl on" id="tpDltBtn" onclick="toggleProd('tp','dlt')">+/− t</button></span><span class="sub" id="tpsub"></span></h2>
         <div id="tpBody"></div>
-        <div class="foot">Cat 797 truck KPI scorecard for the selected shift/view — <b>All Trucks</b> plus one column per active <b>shovel</b> (grouping all trucks that loaded at that shovel), each split <b>Target · Actual · +/− tonnes</b>. The header <b>score badge</b> = Actual ÷ cycle-potential (<span style="color:#2f8f4e">≥90 green</span> · <span style="color:#c98a1f">70–90 amber</span> · <span style="color:#c0392b">&lt;70 red</span>). <b>Total Moved target</b> = payload-normalised cycle potential (rate* × actual cycle seconds; rate* = 361 t ÷ budget cycle). The availability rows use the same PA/UA/OE formulas and sequential tonnes decomposition as the methodology; cycle rows use payload-normalized truck-cycle budgets (361 t basis), and payload quality follows the 10-10-20 rule.</div>
+        <div class="foot">Cat 797 truck KPI scorecard for the selected shift/view — <b>All Trucks</b> plus one column per active <b>shovel</b> (grouping all trucks that loaded at that shovel), each split <b>Target · Actual · +/− tonnes</b>. The header <b>score badge</b> = Actual ÷ cycle-potential (<span style="color:#2f8f4e">≥90 green</span> · <span style="color:#c98a1f">70–90 amber</span> · <span style="color:#c0392b">&lt;70 red</span>). <b>Total Moved target</b> = payload-normalised cycle potential (rate* × actual cycle seconds; rate* = 361 t ÷ budget cycle). The availability rows use the same PA/UA/OE formulas and sequential tonnes decomposition as the methodology; cycle rows use payload-normalized truck-cycle budgets (361 t basis), and payload quality follows the 10-10-20 rule. Data includes only large shovels and trucks.</div>
       </div>
     </section>
 
