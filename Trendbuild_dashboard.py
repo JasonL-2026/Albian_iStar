@@ -4104,6 +4104,7 @@ function drawBalanceTL(tbd){
 }
 function renderLube(){
   const lu=LU();
+  const reviewShiftCount=(reviewShifts().length||1);
   const lubeNote=document.getElementById('lubeNote');
   const lubeReasons=document.getElementById('lubeReasons');
   const lubeLead=document.getElementById('lubeLead');
@@ -4116,7 +4117,7 @@ function renderLube(){
   let rt=`<table class="lanetab"><tr><th>Reason</th><th>Events</th><th>Actual min</th><th>Expected min</th><th>Avg min</th><th>% over</th></tr>`;
   lu.reasons.forEach(r=>rt+=`<tr><td>${r.reason}</td><td>${r.n}</td><td>${r.actual}</td><td>${r.exp}</td><td>${m1(r.avg)}</td><td>${r.over}%</td></tr>`);
   if(lubeReasons) lubeReasons.innerHTML=rt+'</table>';
-  const showShift=reviewCount()>1;
+  const showShift=reviewShiftCount>1;
   let lt=`<table class="lanetab"><tr>${showShift?'<th>Shift</th>':''}<th>Time</th><th>Truck</th><th>Type</th><th>Reason</th><th>Act min</th><th>Exp min</th><th>Over min</th></tr>`;
   lu.leaderboard.forEach(r=>lt+=`<tr>${showShift?`<td>${r.shift||''}</td>`:''}<td>${r.time}</td><td>${r.eqmt}</td><td>${r.type}</td><td>${r.reason}</td><td>${m1(r.actual)}</td><td>${m1(r.exp)}</td><td style="color:${r.over>0?'var(--red)':'var(--green)'};font-weight:700">${r.over>0?'+':''}${m1(r.over)}</td></tr>`);
   if(lubeLead) lubeLead.innerHTML=lt+'</table>';
@@ -4142,7 +4143,7 @@ function renderLube(){
     const sumTa=faRows.reduce((a,r)=>{a.system+=Number(r.truck.system||0);a.manual+=Number(r.truck.manual||0);a.total+=Number(r.truck.total||0);return a;},{system:0,manual:0,total:0});
     const pct=v=>v.total?Math.round(v.system/v.total*100):null;
     const cell=(m)=>m.total?`${pct(m)}% (${m.system}/${m.total})`:'—';
-    const rvCount=reviewCount();
+    const rvCount=reviewShiftCount;
     let ht='<div class="lanewrap"><table class="lanetab"><tr><th>Metric</th><th>Total ('+rvCount+' shift'+(rvCount===1?'':'s')+')</th>'+faRows.map(r=>`<th><div style="font-size:11px;line-height:1.1;color:#6b7280">${r.crew}</div><div>${r.id}</div></th>`).join('')+'</tr>';
     ht+=`<tr><td>Fuel Assignments · System %</td><td><b>${cell(sumFa)}</b></td>${faRows.map(r=>`<td>${cell(r.fuel)}</td>`).join('')}</tr>`;
     ht+=`<tr><td>Truck Assignments · System %</td><td><b>${cell(sumTa)}</b></td>${faRows.map(r=>`<td>${cell(r.truck)}</td>`).join('')}</tr>`;
