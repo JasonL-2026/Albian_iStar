@@ -5661,13 +5661,23 @@ function renderPlaybook(){
   const fmt2=v=>(v==null?'—':Math.round(v).toLocaleString());
   const clr=v=>(v==null?'#888':v>=100?'#2f7a44':v>=90?'#b8830a':'#c0392b');
   const CHALLENGE_PRIORITY_TPH={1:4000,2:2000};
-  const challengeHours=Math.max(1,Math.round((((cumTarget&&cumTarget.length)?cumTarget.length:((cumAct&&cumAct.length)?cumAct.length:48))*0.25)*100)/100);
+  const FULL_SHIFT_HOURS=12;
+  const HIGH_PRIORITY_PROJECTED_SHIFT_T=30000;
+  function elapsedHoursFromSeries(series,fallbackSlots){
+    let last=-1;
+    (series||[]).forEach((v,i)=>{ if(v!=null) last=i; });
+    if(last>=0) return Math.max(0.25,(last+1)*0.25);
+    const slots=Number(fallbackSlots)||48;
+    return Math.max(1,slots*0.25);
+  }
+  const challengeHours=elapsedHoursFromSeries(cumAct,(cumTarget&&cumTarget.length)?cumTarget.length:48);
   const SHOV_WF_ROWS=[['Payload','Payload'],['Spot','Spot at Shovel'],['Load','Load Time'],['Hang','Hang Time']];
   const TRUCK_WF_ROWS=ORDER.map(k=>[k,ROWLABEL[k]||k]);
   function asRiskTon(v){const n=Number(v||0); return Number.isFinite(n)&&n<0?Math.abs(n):0;}
   function challengePriority(tons){
     const tph=(Number(tons)||0)/challengeHours;
-    if(tph>=CHALLENGE_PRIORITY_TPH[1]) return {priority:1,tph};
+    const projectedFullShiftLoss=tph*FULL_SHIFT_HOURS;
+    if(tph>=CHALLENGE_PRIORITY_TPH[1] || projectedFullShiftLoss>=HIGH_PRIORITY_PROJECTED_SHIFT_T) return {priority:1,tph,projectedFullShiftLoss};
     if(tph>=CHALLENGE_PRIORITY_TPH[2]) return {priority:2,tph};
     return {priority:null,tph};
   }
