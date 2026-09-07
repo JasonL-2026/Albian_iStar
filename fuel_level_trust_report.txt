@@ -1,0 +1,94 @@
+﻿========================================================================
+TruckAtLubeLand  FuelLevel  —  Trustworthiness Report
+Generated: 2026-09-07 16:01
+Method: implied level = 100 - Fuel01/FieldFueltank ;  vs reported FuelLevel
+========================================================================
+
+Fuel records (Fuel01 > 0)      : 828
+  no tank size in PitTruck     : 0
+  no matching lube reading     : 72   (fuelled but no FUEL&LUBE level)
+  matched to a sensor reading  : 756
+
+Valid (non-faulty) readings    : 681
+  within +/-1%                 :  508  (75%)
+  within +/-2%                 :  639  (94%)
+  within +/-5%                 :  656  (96%)
+  off by > 5%                  :   25  (4%)
+
+Faulty sensor (reported >100%) : 75   (litres-recoverable to 0-100%: 75)
+
+OVERALL TRUST SCORE            : 87%   (100 of 756 readings wrong)
+  > current dashboard >100% rule catches 75 of 100 bad reads (75%); 25 plausible over/under-reads slip through.
+
+------------------------------------------------------------------------
+Faulty sensor rows (>100%)  [shift, truck, implied%, reported%]  (first 40)
+------------------------------------------------------------------------
+  260901001  T118    implied   40.5%   reported  163.8%
+  260901001  T466    implied   59.2%   reported  163.9%
+  260901001  T461    implied  100.0%   reported  163.9%
+  260901001  T132    implied   28.7%   reported  163.8%
+  260901001  T112    implied   87.1%   reported  163.8%
+  260901001  T452    implied   99.9%   reported  163.9%
+  260901001  T118    implied   21.7%   reported  163.8%
+  260901002  T132    implied   34.9%   reported  163.8%
+  260901002  T465    implied   99.6%   reported  163.9%
+  260901002  T133    implied   31.1%   reported  163.8%
+  260901002  T466    implied  100.0%   reported  163.9%
+  260901002  T112    implied   19.6%   reported  163.8%
+  260901002  T461    implied   99.9%   reported  163.9%
+  260901002  T132    implied   31.4%   reported  163.8%
+  260902001  T133    implied   45.9%   reported  163.8%
+  260902001  T127    implied   55.5%   reported  163.8%
+  260902001  T112    implied   57.0%   reported  163.8%
+  260902001  T452    implied  100.0%   reported  163.9%
+  260902001  T118    implied   15.0%   reported  163.8%
+  260902002  T466    implied   97.4%   reported  163.9%
+  260902002  T133    implied   37.2%   reported  163.8%
+  260902002  T461    implied   99.8%   reported  163.9%
+  260902002  T118    implied   11.8%   reported  163.8%
+  260902002  T112    implied   16.5%   reported  163.8%
+  260902002  T465    implied   99.0%   reported  163.9%
+  260902002  T127    implied   40.0%   reported  163.8%
+  260902002  T118    implied   20.0%   reported  163.8%
+  260903001  T466    implied   99.8%   reported  163.9%
+  260903001  T133    implied   41.3%   reported  163.8%
+  260903001  T112    implied   56.5%   reported  163.8%
+  260903001  T118    implied   78.5%   reported  163.8%
+  260903001  T452    implied   99.9%   reported  163.9%
+  260903001  T134    implied   92.8%   reported  163.8%
+  260903001  T127    implied   83.0%   reported  163.8%
+  260903002  T118    implied   49.9%   reported  163.8%
+  260903002  T133    implied   44.6%   reported  163.8%
+  260903002  T466    implied   99.9%   reported  163.9%
+  260903002  T465    implied   99.8%   reported  163.9%
+  260903002  T132    implied   43.9%   reported  163.8%
+  260904001  T466    implied   99.2%   reported  163.9%
+
+------------------------------------------------------------------------
+Non-faulty mismatches |delta| > 5%  [shift, truck, implied%, reported%, delta]
+------------------------------------------------------------------------
+  260905001  T104    implied   13.4%   reported  100.0%   delta  -86.6
+  260906002  T137    implied   23.5%   reported  100.0%   delta  -76.5
+  260904002  T115    implied   17.8%   reported   89.4%   delta  -71.6
+  260902002  T453    implied   24.1%   reported   94.3%   delta  -70.1
+  260903001  T455    implied   25.2%   reported   90.2%   delta  -65.1
+  260902001  T103    implied   35.2%   reported   98.2%   delta  -62.9
+  260904002  T123    implied   15.2%   reported   75.1%   delta  -59.9
+  260901002  T106    implied   22.6%   reported   78.4%   delta  -55.8
+  260906001  T470    implied   88.7%   reported   38.5%   delta  +50.2
+  260903002  T469    implied   30.3%   reported   79.1%   delta  -48.9
+  260902001  T111    implied   60.7%   reported   15.1%   delta  +45.6
+  260904001  T151    implied   14.8%   reported   59.1%   delta  -44.3
+  260904002  T163    implied   16.8%   reported   59.0%   delta  -42.2
+  260903001  T101    implied   14.5%   reported   53.3%   delta  -38.8
+  260901001  T107    implied   95.2%   reported   62.2%   delta  +33.0
+  260902001  T473    implied   89.7%   reported   61.5%   delta  +28.2
+  260907001  T152    implied   25.6%   reported   52.3%   delta  -26.6
+  260906002  T132    implied   17.8%   reported   42.9%   delta  -25.1
+  260905001  T151    implied   95.6%   reported   71.3%   delta  +24.3
+  260901002  T134    implied   45.8%   reported   69.6%   delta  -23.8
+  260906002  T460    implied   43.3%   reported   24.6%   delta  +18.7
+  260907001  T129    implied   25.9%   reported    8.0%   delta  +17.9
+  260905002  T470    implied   40.2%   reported   51.6%   delta  -11.5
+  260901001  T112    implied   99.9%   reported   92.7%   delta   +7.2
+  260901002  T465    implied   91.6%   reported   98.4%   delta   -6.8
