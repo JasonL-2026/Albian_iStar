@@ -808,6 +808,26 @@ def build_shift(sm):
                 'status':{k:cseg.get(k,[]) for k in eq}}
     # ---- lube-land delays (this shift) ----
     lube=[r for r in lube_all if _sid(r)==sid]
+    # De-duplicate refuel bookings: a same-truck FUEL&LUBE/FUEL BREAK event logged twice within 5 min
+    # (a short false-start entry + the real fuelling) is one visit → keep the longest, drop the rest.
+    def _dedup_lube(rows):
+        out=[r for r in rows if r.get('Reason') not in ('FUEL&LUBE','FUEL BREAK')]
+        grp=defaultdict(list)
+        for r in rows:
+            if r.get('Reason') in ('FUEL&LUBE','FUEL BREAK'): grp[(r.get('Eqmt'),r.get('Reason'))].append(r)
+        for evs in grp.values():
+            evs.sort(key=lambda r:(_dtp(r.get('TimeStamp')) or _dtm(1900,1,1)))
+            cluster=[]; prev=None
+            for r in evs:
+                t=_dtp(r.get('TimeStamp'))
+                if cluster and prev is not None and t is not None and (t-prev).total_seconds()<300: cluster.append(r)
+                else:
+                    if cluster: out.append(max(cluster,key=lambda x:num(x.get('Duration'))))
+                    cluster=[r]
+                prev=t if t is not None else prev
+            if cluster: out.append(max(cluster,key=lambda x:num(x.get('Duration'))))
+        return out
+    lube_raw=lube; lube=_dedup_lube(lube_raw)
     # fuel-assignment index for this shift: truck -> sorted [(ts, isManual)]
     _fa_bytruck=defaultdict(list)
     for r in (x for x in fuel_assign_all if x.get('ShiftID')==sid):
@@ -823,6 +843,7 @@ def build_shift(sm):
         return min(cand,key=lambda c:abs((c[0]-ts).total_seconds()))[1]
     def agg_lube(pits):
         L=[r for r in lube if r['Pit'] in pits]
+        dupDropped=len([r for r in lube_raw if r['Pit'] in pits])-len(L)   # same-truck refuels merged
         short=sum(1 for r in L if not _lube_ok(r))
         Lv=[r for r in L if _lube_ok(r)]
         rr=defaultdict(lambda:[0,0.0,0.0,0])
@@ -906,7 +927,7 @@ def build_shift(sm):
                      'sysPct':round(ta_sys_n/ta_tot*100) if ta_tot else 0,
                      'manPct':round(ta_man_n/ta_tot*100) if ta_tot else 0}
         return {'reasons':reasons,'fuelHist':hist,'fuelHistMan':histMan,'fuelEdges':FEDGES,'faulty':faulty,'zero':zero,'shortCount':short,
-                'leaderboard':leaderboard,'byClass':byClass,'n':len(Lv),'hourly':hourly,
+                'leaderboard':leaderboard,'byClass':byClass,'n':len(Lv),'dupDropped':dupDropped,'hourly':hourly,
                 'faultySensor':faultySensor,'fuelAssign':fuelAssign,'truckAssign':truckAssign}
 
     # ---- aggregators (close over the shift locals) ----
@@ -3631,7 +3652,7 @@ function renderLube(){
   const lubeLead=document.getElementById('lubeLead');
   const lubeFaulty=document.getElementById('lubeFaulty');
   const lubeAssignAuto=document.getElementById('lubeAssignAuto');
-  if(lubeNote) lubeNote.textContent=`${lu.n} events (this shift/view) · ${lu.shortCount} short <20s FUEL&LUBE/BREAK ignored · ${lu.faulty} faulty fuel reads (>100%) · ${lu.zero} zero/missing`;
+  if(lubeNote) lubeNote.textContent=`${lu.n} events (this shift/view) · ${lu.shortCount} short <20s FUEL&LUBE/BREAK ignored · ${lu.dupDropped||0} duplicate refuels merged · ${lu.faulty} faulty fuel reads (>100%) · ${lu.zero} zero/missing`;
   const m1=s=>(s/60).toFixed(1);
   let rt=`<table class="lanetab"><tr><th>Reason</th><th>Events</th><th>Actual min</th><th>Expected min</th><th>Avg min</th><th>% over</th></tr>`;
   lu.reasons.forEach(r=>rt+=`<tr><td>${r.reason}</td><td>${r.n}</td><td>${r.actual}</td><td>${r.exp}</td><td>${m1(r.avg)}</td><td>${r.over}%</td></tr>`);
