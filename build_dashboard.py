@@ -306,6 +306,39 @@ for _r in tad_all:   # tolerate the 'd'-prefixed export schema (dShiftId, dDumpL
 lube_all=load_csv('TruckAtLubeLand.csv')
 fuel_assign_all=load_csv('SystemVsManualFuelAssignments.csv')
 truck_assign_all=load_csv('SystemVsManualAssignments.csv')
+# ---- OPTIONAL fuel-litres validation (used only when the litres + tank sources are present) ----
+# Cross-checks each FUEL&LUBE FuelLevel against an independent litres/tank calc:
+#   implied level = 100 - Fuel01 / FieldFueltank.  Corrects faulty (>100%) reads and flags over/under-reads.
+# Reads Data/PitTruck_temp.(csv|xlsx) + Data/shiftshiftfuel_temp.(csv|xlsx); silently skips if absent.
+FUEL_TANK={}                    # truck -> tank size (litres)
+FUEL_LITRES=defaultdict(list)   # (shiftId, truck) -> [(startSec, litres)]
+def _load_fuel_validation():
+    def _rows(stem):
+        cp=f'{DATADIR}/{stem}.csv'
+        if os.path.exists(cp):
+            with open(cp,encoding='utf-8-sig',newline='') as f: return list(csv.DictReader(f))
+        xp=f'{DATADIR}/{stem}.xlsx'
+        if not os.path.exists(xp): return None
+        try: import openpyxl
+        except ImportError: return None
+        wb=openpyxl.load_workbook(xp,read_only=True,data_only=True); ws=wb.active
+        it=ws.iter_rows(values_only=True); hdr=[str(h) for h in next(it)]
+        out=[dict(zip(hdr,r)) for r in it]; wb.close(); return out
+    pt=_rows('PitTruck_temp'); sf=_rows('shiftshiftfuel_temp')
+    if not pt or not sf: return
+    for r in pt:
+        t=str(r.get('FieldId') or '').strip()
+        try: tk=float(r.get('FieldFueltank'))
+        except (TypeError,ValueError): continue
+        if t and tk>0: FUEL_TANK[t]=tk
+    for r in sf:
+        sid=str(r.get('ShiftId') or ''); t=str(r.get('Equipment') or '').strip()
+        try: L=float(r.get('Fuel01'))
+        except (TypeError,ValueError): continue
+        try: st=float(r.get('FuelStartTime') or 0)
+        except (TypeError,ValueError): st=0.0
+        if sid and t and L>0: FUEL_LITRES[(sid,t)].append((st,L))
+_load_fuel_validation()
 # Real x/y positions for the Cycle Map, auto-derived from AllLoadsDumps GPS: the truck's field GPS at
 # load (FieldGpsxtkl/ytkl) gives each shovel's position, at dump (FieldGpsxtkd/ytkd) each dump's — taken
 # as the MEDIAN over all loads/dumps for that location (robust to GPS jitter; zeros/blanks are missing).
@@ -854,10 +887,18 @@ def build_shift(sm):
                   'avg':round(v[1]/v[0]) if v[0] else 0,'over':round(v[3]/v[0]*100) if v[0] else 0}
                  for k,v in sorted(rr.items(),key=lambda x:-x[1][1])]
         FEDGES=[0,8,16,24,32,40,60,80,100]      # custom (non-uniform) fuel-level bin edges
-        hist=[0]*(len(FEDGES)-1); histMan=[0]*(len(FEDGES)-1); faulty=0; zero=0
+        hist=[0]*(len(FEDGES)-1); histMan=[0]*(len(FEDGES)-1); faulty=0; zero=0; corrected=0; suspect=0
         fsm=defaultdict(lambda:[0,0.0,''])   # eqmt -> [faulty-read count, sample value, type]
+        def _implied(r):   # litres/tank-derived level (only when the fuel workbooks are present), else None
+            c=FUEL_LITRES.get((sid,r.get('Eqmt'))); tsz=FUEL_TANK.get(r.get('Eqmt'))
+            if not c or not tsz: return None
+            d=_dtp(r.get('TimeStamp')); sec=(((d.hour-base)%24)*3600+d.minute*60+d.second) if d else 0
+            return 100-min(c,key=lambda x:abs(x[0]-sec))[1]/tsz*100
         for r in Lv:
-            f=num(r['FuelLevel'])
+            f=num(r['FuelLevel']); imp=_implied(r)
+            if imp is not None and 0<=imp<=100:
+                if f>100: f=imp; corrected+=1                 # faulty sensor -> use litres-derived level
+                elif abs(imp-f)>10: f=imp; suspect+=1         # believable but wrong -> correct & flag
             if f>100:
                 faulty+=1; e=fsm[r['Eqmt']]; e[0]+=1; e[1]=f; e[2]=r['Eqmttype']
             elif f<=0: zero+=1
@@ -927,7 +968,8 @@ def build_shift(sm):
                      'manPct':round(ta_man_n/ta_tot*100) if ta_tot else 0}
         return {'reasons':reasons,'fuelHist':hist,'fuelHistMan':histMan,'fuelEdges':FEDGES,'faulty':faulty,'zero':zero,'shortCount':short,
                 'leaderboard':leaderboard,'byClass':byClass,'n':len(Lv),'dupDropped':dupDropped,'hourly':hourly,
-                'faultySensor':faultySensor,'fuelAssign':fuelAssign,'truckAssign':truckAssign}
+                'faultySensor':faultySensor,'fuelAssign':fuelAssign,'truckAssign':truckAssign,
+                'corrected':corrected,'suspect':suspect}
 
     # ---- aggregators (close over the shift locals) ----
     def agg_haul(pits):
@@ -3651,7 +3693,8 @@ function renderLube(){
   const lubeLead=document.getElementById('lubeLead');
   const lubeFaulty=document.getElementById('lubeFaulty');
   const lubeAssignAuto=document.getElementById('lubeAssignAuto');
-  if(lubeNote) lubeNote.textContent=`${lu.n} events (this shift/view) · ${lu.shortCount} short <20s FUEL&LUBE/BREAK ignored · ${lu.dupDropped||0} duplicate refuels merged · ${lu.faulty} faulty fuel reads (>100%) · ${lu.zero} zero/missing`;
+  const _fv=((lu.corrected||0)+(lu.suspect||0))>0?` · ${lu.corrected||0} faulty+${lu.suspect||0} suspect reads corrected via litres/tank`:'';
+  if(lubeNote) lubeNote.textContent=`${lu.n} events (this shift/view) · ${lu.shortCount} short <20s FUEL&LUBE/BREAK ignored · ${lu.dupDropped||0} duplicate refuels merged · ${lu.faulty} faulty fuel reads (>100%) · ${lu.zero} zero/missing${_fv}`;
   const m1=s=>(s/60).toFixed(1);
   let rt=`<table class="lanetab"><tr><th>Reason</th><th>Events</th><th>Actual min</th><th>Expected min</th><th>Avg min</th><th>% over</th></tr>`;
   lu.reasons.forEach(r=>rt+=`<tr><td>${r.reason}</td><td>${r.n}</td><td>${r.actual}</td><td>${r.exp}</td><td>${m1(r.avg)}</td><td>${r.over}%</td></tr>`);
