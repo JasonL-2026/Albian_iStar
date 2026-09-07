@@ -1,0 +1,417 @@
+﻿Textbox71,Textbox72
+24-AUG-2026 Day Shift to 06-SEP-2026 Night Shift,JPM
+
+Category,DumpLoc,Crew,AlbianTonnage,Textbox53,Textbox51,Textbox54,Textbox48,Textbox55,Textbox358
+Productive,Crusher,Crew A,0.82,3.40,0.91,3.99,1.08,4.53,"10,714"
+Productive,Crusher,Crew B,0.89,3.40,1.10,3.99,1.22,4.53,"11,389"
+Productive,Crusher,Crew C,0.82,3.40,0.94,3.99,1.08,4.53,"10,550"
+Productive,Crusher,Crew D,0.87,3.40,1.04,3.99,1.16,4.53,"11,083"
+Productive,Dump,Crew A,0.01,0.05,0.91,3.99,1.08,4.53,"10,714"
+Productive,Dump,Crew B,0.02,0.05,1.10,3.99,1.22,4.53,"11,389"
+Productive,Dump,Crew C,0.01,0.05,0.94,3.99,1.08,4.53,"10,550"
+Productive,Dump,Crew D,0.01,0.05,1.04,3.99,1.16,4.53,"11,083"
+Productive,Dyke,Crew A,0.08,0.53,0.91,3.99,1.08,4.53,"10,714"
+Productive,Dyke,Crew B,0.19,0.53,1.10,3.99,1.22,4.53,"11,389"
+Productive,Dyke,Crew C,0.11,0.53,0.94,3.99,1.08,4.53,"10,550"
+Productive,Dyke,Crew D,0.15,0.53,1.04,3.99,1.16,4.53,"11,083"
+Non-Productive,Crusher,Crew A,0.08,0.27,0.17,0.55,1.08,4.53,"10,714"
+Non-Productive,Crusher,Crew B,0.07,0.27,0.12,0.55,1.22,4.53,"11,389"
+Non-Productive,Crusher,Crew C,0.07,0.27,0.14,0.55,1.08,4.53,"10,550"
+Non-Productive,Crusher,Crew D,0.06,0.27,0.11,0.55,1.16,4.53,"11,083"
+Non-Productive,Dump,Crew A,0.01,0.03,0.17,0.55,1.08,4.53,"10,714"
+Non-Productive,Dump,Crew B,0.00,0.03,0.12,0.55,1.22,4.53,"11,389"
+Non-Productive,Dump,Crew C,0.01,0.03,0.14,0.55,1.08,4.53,"10,550"
+Non-Productive,Dump,Crew D,0.01,0.03,0.11,0.55,1.16,4.53,"11,083"
+Non-Productive,Other,Crew A,0.09,0.24,0.17,0.55,1.08,4.53,"10,714"
+Non-Productive,Other,Crew B,0.04,0.24,0.12,0.55,1.22,4.53,"11,389"
+Non-Productive,Other,Crew C,0.07,0.24,0.14,0.55,1.08,4.53,"10,550"
+Non-Productive,Other,Crew D,0.05,0.24,0.11,0.55,1.16,4.53,"11,083"
+
+Tonnage_label,Tonnage_Chart1_CategoryGroup_label,Tonnage_Chart1_CategoryGroup_Value_Y
+Tonnage,Crew A,0.909513389999996
+Tonnage,Crew B,1.097506538
+Tonnage,Crew C,0.938624901999998
+Tonnage,Crew D,1.04350219799999
+
+Textbox360
+2.82
+
+Textbox361
+3.30
+
+Textbox362
+2.58
+
+Textbox363
+3.08
+
+Textbox251
+7
+
+Textbox253
+7
+
+Textbox254
+7
+
+Textbox255
+7
+
+Textbox365
+0.59
+
+Textbox366
+0.37
+
+Textbox367
+0.17
+
+Textbox368
+0.38
+
+Rdy Duration_label,Rdy Duration_Chart3_CategoryGroup_label,Rdy Duration_Chart3_CategoryGroup_Value_Y
+Rdy Duration,Crew A,893.603882762829
+Rdy Duration,Crew B,962.06271323472
+Rdy Duration,Crew C,880.015486035196
+Rdy Duration,Crew D,934.130215302836
+
+Textbox179,Textbox182,Textbox185,Textbox188,Textbox191,Textbox162,Textbox194,Textbox196
+843,894,80.2%,99.3%,94.4%,93.74%,"1,138",1.0
+
+Textbox189,Textbox199,Textbox201,Textbox203,Textbox205,Textbox170,Textbox207,Textbox209
+908,962,83.4%,99.4%,94.3%,93.78%,"1,184",1.1
+
+Textbox200,Textbox204,Textbox208,Textbox212,Textbox214,Textbox171,Textbox216,Textbox218
+818,880,83.3%,99.8%,93.0%,92.77%,"1,186",1.0
+
+Textbox206,Textbox213,Textbox217,Textbox221,Textbox223,Textbox174,Textbox225,Textbox227
+873,934,84.1%,99.2%,93.5%,92.74%,"1,191",1.0
+
+Textbox215,Textbox222,Textbox226,Textbox230,Textbox232,Textbox175,Textbox234,Textbox236
+861,918,82.7%,99.4%,93.8%,93.25%,"1,175",1.0
+
+Textbox340
+87.7%
+
+Textbox341
+86.3%
+
+Textbox342
+87.9%
+
+Textbox343
+86.1%
+
+Textbox346
+87.0%
+
+Textbox395,Textbox397,Textbox451,Textbox401,Textbox403,Textbox405,Textbox407,Textbox409,Textbox453
+3.09,3.38,11.18,7.47,0.68,1.07,1.18,1.80,26.76
+
+Textbox420,Textbox422,Textbox454,Textbox425,Textbox427,Textbox429,Textbox431,Textbox433,Textbox456
+2.94,3.22,10.03,7.35,0.65,1.13,1.55,2.15,26.07
+
+Textbox437,Textbox439,Textbox457,Textbox442,Textbox444,Textbox446,Textbox448,Textbox450,Textbox459
+3.04,3.19,11.09,7.97,0.65,1.09,0.87,1.48,26.33
+
+Textbox463,Textbox465,Textbox467,Textbox469,Textbox471,Textbox473,Textbox475,Textbox477,Textbox479
+2.90,3.42,10.27,7.50,0.75,1.01,1.22,1.98,26.15
+
+Truck Idle Time_label,Truck Idle Time_Chart4_CategoryGroup_label,Truck Idle Time_Chart4_CategoryGroup_Value_Y
+Truck Idle Time,Crew A,26.7561955564124
+Truck Idle Time,Crew B,26.0731702005099
+Truck Idle Time,Crew C,26.3345980808221
+Truck Idle Time,Crew D,26.1514809520082
+
+Truck Idle Time_label,Truck Idle Time_Chart4_CategoryGroup2_label,Truck Idle Time_Chart4_CategoryGroup2_Value_Y
+Truck Idle Time,Crew A,14.8200855722691
+Truck Idle Time,Crew B,15.9458971546337
+Truck Idle Time,Crew C,18.3571397871645
+Truck Idle Time,Crew D,16.2536861796584
+
+Textbox423,Textbox426,Textbox455,Textbox432,Textbox436,Textbox440,Textbox443,Textbox447,Textbox460
+1.41,2.72,4.66,3.96,0.67,0.90,0.78,1.13,14.82
+
+Textbox462,Textbox464,Textbox466,Textbox468,Textbox470,Textbox472,Textbox474,Textbox476,Textbox478
+1.18,2.53,4.79,4.80,0.64,0.91,1.05,1.23,15.95
+
+Textbox481,Textbox482,Textbox483,Textbox484,Textbox485,Textbox486,Textbox487,Textbox488,Textbox489
+1.36,2.64,5.38,6.74,0.67,1.00,0.79,1.13,18.36
+
+Textbox491,Textbox492,Textbox493,Textbox494,Textbox495,Textbox496,Textbox497,Textbox498,Textbox499
+1.34,2.72,5.35,4.97,0.65,0.62,0.77,1.17,16.25
+
+Textbox224,Textbox231,Textbox235,Textbox239,Textbox241,Textbox243,Textbox4,Textbox245,Textbox6,Textbox247
+"3,094","3,376",78.3%,97.8%,91.7%,267,245,0.8,"2,285",2.18
+
+Textbox503,Textbox505,Textbox507,Textbox509,Textbox511,Textbox513,Textbox8,Textbox515,Textbox10,Textbox517
+"3,178","3,466",87.7%,98.7%,91.7%,324,297,1.0,"2,840",2.15
+
+Textbox506,Textbox510,Textbox516,Textbox518,Textbox520,Textbox522,Textbox9,Textbox524,Textbox12,Textbox526
+"2,980","3,195",83.0%,99.5%,93.3%,283,264,0.8,"2,347",2.67
+
+Textbox508,Textbox512,Textbox519,Textbox521,Textbox523,Textbox525,Textbox11,Textbox527,Textbox13,Textbox528
+"2,835","3,012",92.2%,98.2%,94.1%,337,317,1.0,"2,633",2.86
+
+Textbox276,Textbox277,Textbox278,Textbox279,Textbox280,Textbox281,Textbox282,Textbox283,Textbox83,Textbox82
+"3,018","3,254",85.5%,98.5%,92.7%,303,281,0.9,"2,526",2.46
+
+Delay Duration_label,Delay Duration_Chart6_CategoryGroup_label,Delay Duration_Chart6_CategoryGroup_Value_Y
+Delay Duration,Crew A,3093.82978354023
+Delay Duration,Crew B,3178.31726683583
+Delay Duration,Crew C,2979.89315395827
+Delay Duration,Crew D,2835.26538717501
+
+Delay Duration_label,Delay Duration_Chart6_CategoryGroup2_label,Delay Duration_Chart6_CategoryGroup2_Value_Y
+Delay Duration,Crew A,2172.55559493199
+Delay Duration,Crew B,760.194175076038
+Delay Duration,Crew C,2382.18855713712
+Delay Duration,Crew D,1330.60347968937
+
+Textbox302,Textbox304,Textbox318,Textbox320,Textbox322,Textbox324,Textbox34,Textbox326,Textbox36,Textbox328
+"2,173","2,653",96.8%,99.6%,81.9%,63,51,0.1,390,3.62
+
+Textbox583,Textbox584,Textbox585,Textbox586,Textbox587,Textbox588,Textbox37,Textbox589,Textbox38,Textbox590
+760,"2,348",100.0%,93.8%,32.4%,61,20,0.0,137,5.24
+
+Textbox592,Textbox593,Textbox594,Textbox595,Textbox596,Textbox597,Textbox39,Textbox598,Textbox40,Textbox599
+"2,382","2,684",85.6%,98.1%,88.8%,54,48,0.1,364,3.76
+
+Textbox601,Textbox602,Textbox603,Textbox604,Textbox605,Textbox606,Textbox42,Textbox607,Textbox44,Textbox608
+"1,331","2,215",98.0%,99.3%,60.1%,67,40,0.1,265,5.70
+
+Textbox330,Textbox331,Textbox332,Textbox333,Textbox334,Textbox335,Textbox336,Textbox337,Textbox88,Textbox89
+"1,636","2,514",95.2%,97.7%,65.1%,61,40,0.1,289,4.33
+
+Textbox269,Textbox271,Textbox273,Textbox293,Textbox295,Textbox297,Textbox24,Textbox305,Textbox26,Textbox307
+321,482,100.0%,93.9%,66.6%,52,35,0.0,136,10.69
+
+Textbox556,Textbox557,Textbox558,Textbox559,Textbox560,Textbox561,Textbox27,Textbox562,Textbox28,Textbox563
+716,754,100.0%,99.9%,95.0%,84,80,0.1,492,6.34
+
+Textbox565,Textbox566,Textbox567,Textbox568,Textbox569,Textbox570,Textbox29,Textbox571,Textbox30,Textbox572
+424,451,100.0%,93.6%,94.1%,55,52,0.0,203,8.43
+
+Textbox574,Textbox575,Textbox576,Textbox577,Textbox578,Textbox579,Textbox31,Textbox580,Textbox32,Textbox581
+522,564,99.9%,94.4%,92.5%,79,73,0.0,337,8.71
+
+Textbox309,Textbox310,Textbox311,Textbox312,Textbox313,Textbox314,Textbox315,Textbox316,Textbox86,Textbox87
+523,590,100.0%,95.7%,88.6%,68,60,0.0,292,7.89
+
+Delay Duration_label,Delay Duration_Chart6_CategoryGroup3_label,Delay Duration_Chart6_CategoryGroup3_Value_Y
+Delay Duration,Crew A,320.69957488677
+Delay Duration,Crew B,716.347813103462
+Delay Duration,Crew C,423.768892986341
+Delay Duration,Crew D,521.697381746976
+
+Standby_label,Standby_Chart9_CategoryGroup2_label,Standby_Chart9_CategoryGroup2_Value_Y
+Standby,Crew A,0.884345820266389
+Standby,Crew B,0.89355874333089
+Standby,Crew C,0.75929149107556
+Standby,Crew D,0.732561280302519
+
+Textbox530,Textbox532,Textbox544
+93%,88%,99%
+
+Textbox616,Textbox618,Textbox545
+84%,89%,99%
+
+Textbox630,Textbox631,Textbox546
+92%,76%,99%
+
+Textbox634,Textbox635,Textbox547
+81%,73%,99%
+
+Textbox638,Textbox639,Textbox548
+87%,82%,99%
+
+Tonnage_label,Tonnage_Chart9_CategoryGroup_label,Tonnage_Chart9_CategoryGroup_Value_Y
+Tonnage,Crew A,0.220257234726688
+Tonnage,Crew B,0.134208606856309
+Tonnage,Crew C,0.200490998363339
+Tonnage,Crew D,0.17869285984133
+
+Textbox412,Textbox414,Textbox416
+361,21,22.0%
+
+Textbox611,Textbox613,Textbox615
+350,11,13.4%
+
+Textbox614,Textbox617,Textbox619
+355,16,20.0%
+
+Textbox623,Textbox625,Textbox627
+353,16,17.9%
+
+Textbox624,Textbox626,Textbox628
+355,64,18.2%
+
+Duration_label,Duration_Chart2_CategoryGroup_label,Duration_Chart2_CategoryGroup_Value_Y
+Duration,Crew A,3.18699763593381
+Duration,Crew B,2.79818652849741
+Duration,Crew C,3.69794372294372
+Duration,Crew D,3.80045351473923
+
+Textbox79
+3.2
+
+Textbox81
+2.8
+
+Textbox84
+3.7
+
+Textbox85
+3.8
+
+Textbox90
+3.3
+
+RS_label,RS_Chart10_CategoryGroup_label,RS_Chart10_CategoryGroup_Value_Y
+RS,Crew A,0.2292597433551192757170707816
+RS,Crew B,0.1773605154507589258478788304
+RS,Crew C,0.0915819643439673874201990588
+RS,Crew D,0.06538189688500264729035378
+
+Textbox93,Textbox94
+23%,77%
+
+Textbox98,Textbox99
+18%,82%
+
+Textbox100,Textbox101
+9%,91%
+
+Textbox103,Textbox104
+7%,93%
+
+Textbox106,Textbox107
+14%,86%
+
+Duration_label,Duration_Chart2_CategoryGroup2_label,Duration_Chart2_CategoryGroup2_Value_Y
+Duration,Crew A,4.82986111111111
+Duration,Crew B,5.46541666666667
+Duration,Crew C,5.39075907590759
+Duration,Crew D,6.07079510703364
+
+Textbox112,Textbox2,Textbox14
+4.8,4.0,NaN
+
+Textbox122,Textbox16,Textbox17
+5.5,3.6,NaN
+
+Textbox116,Textbox18,Textbox19
+5.4,11.5,NaN
+
+Textbox118,Textbox20,Textbox21
+6.1,6.6,1.7
+
+Textbox120,Textbox22,Textbox45
+5.4,6.2,1.7
+
+Textbox345
+"75,131"
+
+Textbox347
+"85,256"
+
+Textbox348
+"68,061"
+
+Textbox349
+"80,292"
+
+Tonnage_label,Tonnage_Chart2_CategoryGroup7_label,Tonnage_Chart2_CategoryGroup7_Value_Y
+Tonnage,Crew A,75130.552
+Tonnage,Crew B,85255.7340000002
+Tonnage,Crew C,68061.168
+Tonnage,Crew D,80291.5300000001
+
+Reason_label,Reason_Chart2_CategoryGroup5_label,Reason_Chart2_CategoryGroup5_Value_Y
+Reason,Crew A,10.6009661835749
+Reason,Crew B,10.1485294117647
+Reason,Crew C,12.1502849002849
+Reason,Crew D,13.8814655172414
+
+Textbox154,Textbox262,Textbox351,Textbox370
+10.1,0.5,10.6,2.1%
+
+Textbox160,Textbox263,Textbox352,Textbox372
+9.7,0.4,10.1,1.9%
+
+Textbox167,Textbox264,Textbox353,Textbox373
+11.7,0.4,12.2,2.0%
+
+Textbox173,Textbox288,Textbox354,Textbox374
+13.6,0.3,13.9,2.3%
+
+Textbox198,Textbox289,Textbox355,Textbox375
+11.2,0.4,11.6,2.1%
+
+Textbox265
+32%
+
+Textbox284
+29%
+
+Textbox285
+27%
+
+Textbox286
+30%
+
+Ore_label,Ore_Chart2_CategoryGroup3_label,Ore_Chart2_CategoryGroup3_Value_Y
+Ore,Crew A,0.936238716735092
+Ore,Crew B,0.907225016260196
+Ore,Crew C,0.959057343251278
+Ore,Crew D,0.864863491116196
+
+Textbox125,Textbox49,Textbox57
+"881,199","80,734",93.6%
+
+Textbox128,Textbox58,Textbox59
+"864,706","211,518",90.7%
+
+Textbox130,Textbox60,Textbox61
+"858,403","114,721",95.9%
+
+Textbox132,Textbox62,Textbox133
+"865,837","178,285",86.5%
+
+Textbox135,Textbox136,Textbox137
+"3,470,146","585,258",90.8%
+
+Reject Crusher_label,Reject Crusher_Chart2_CategoryGroup6_label,Reject Crusher_Chart2_CategoryGroup6_Value_Y
+Reject Crusher,Crew A,0.805213946877535
+Reject Crusher,Crew B,0.902622526555554
+Reject Crusher,Crew C,0.835582512511595
+Reject Crusher,Crew D,0.819636624758881
+
+Textbox158,Textbox260
+80.5%,10.6%
+
+Textbox220,Textbox291
+90.3%,8.8%
+
+Textbox248,Textbox292
+83.6%,9.5%
+
+Textbox252,Textbox338
+82.0%,8.5%
+
+Textbox257,Textbox339
+83.9%,9.4%
+
+Shift ID_label,Shift ID_Chart2_CategoryGroup4_label,Shift ID_Chart2_CategoryGroup4_Value_Y
+Shift ID,,
+
+Textbox141
+
+Textbox143
+
+Textbox145
+
+Textbox147
+
+Textbox149
+
