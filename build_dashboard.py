@@ -900,17 +900,16 @@ def build_shift(sm):
                 'wait':[round(x,1) for x in hb['wait']],'brk':[round(x,1) for x in hb['brk']],
                 'exp':[round(x,1) for x in hb['exp']],'occ':occ,'occWait':occWait,
                 'fuelMan':[round(x,1) for x in fuelMan],'occFuel':occFuel,'occFuelMan':occFuelMan}
-        # ---- fuel assignment automation (System vs Manual) ----
-        fa=[r for r in fuel_assign_all if r.get('ShiftID')==sid and any(p in (r.get('ToLocation') or '') for p in pits)]
-        fa_sys=[r for r in fa if r.get('AssignType')=='System Fuel Assignment']
-        fa_man_raw=[r for r in fa if r.get('AssignType')=='Dispatcher Fuel Assignment']
-        fa_man_latest={}
-        for r in fa_man_raw:
-            tk=r.get('messagebody',''); ts=_dtp(r.get('TIMESTAMP',''))
-            if tk and ts and (tk not in fa_man_latest or ts>fa_man_latest[tk][1]):
-                fa_man_latest[tk]=(r,ts)
-        fa_sys_n=len(fa_sys); fa_man_n=len(fa_man_latest); fa_tot=fa_sys_n+fa_man_n
-        fuelAssign={'system':fa_sys_n,'manual':fa_man_n,'total':fa_tot,
+        # ---- fuel assignment automation — each actual (de-duplicated) fuelling matched to its CLOSEST assignment ----
+        fa_sys_n=fa_man_n=fa_unm=0
+        for r in Lv:
+            if r['Reason']!='FUEL&LUBE': continue
+            m=_assign_manual(r['Eqmt'],_dtp(r['TimeStamp']))   # True=manual(dispatcher) · False=system · None=no assignment
+            if m is True: fa_man_n+=1
+            elif m is False: fa_sys_n+=1
+            else: fa_unm+=1
+        fa_tot=fa_sys_n+fa_man_n
+        fuelAssign={'system':fa_sys_n,'manual':fa_man_n,'total':fa_tot,'unassigned':fa_unm,
                     'sysPct':round(fa_sys_n/fa_tot*100) if fa_tot else 0,
                     'manPct':round(fa_man_n/fa_tot*100) if fa_tot else 0}
         # ---- truck assignment automation (System vs Manual/Dispatcher, all pits) ----
@@ -3679,14 +3678,14 @@ function renderLube(){
     const fa=lu.fuelAssign||{};
     const bar=(pct,color)=>`<div style="display:inline-block;width:${pct}%;height:12px;background:${color};border-radius:2px;vertical-align:middle"></div>`;
     let ht='<table class="lanetab">';
-    ht+=`<tr><th>Metric</th><th>System</th><th>Manual</th><th>Total</th><th style="min-width:120px">System %</th></tr>`;
-    if(fa.total>0){
-      ht+=`<tr><td>Fuel Assignments</td><td>${fa.system}</td><td>${fa.manual}</td><td>${fa.total}</td>`;
+    ht+=`<tr><th>Metric</th><th>System</th><th>Manual</th><th>Unassigned</th><th>Total</th><th style="min-width:120px">System %</th></tr>`;
+    if(fa.total>0 || (fa.unassigned||0)>0){
+      ht+=`<tr><td>Fuel Assignments</td><td>${fa.system}</td><td>${fa.manual}</td><td>${fa.unassigned||0}</td><td>${fa.total}</td>`;
       ht+=`<td>${bar(fa.sysPct,'#1f9e8b')}${bar(fa.manPct,'#e0952a')} <b>${fa.sysPct}%</b> system</td></tr>`;
     }else{
-      ht+=`<tr><td colspan="5" class="foot">No fuel assignment data for this shift/view.</td></tr>`;
+      ht+=`<tr><td colspan="6" class="foot">No fuel assignment data for this shift/view.</td></tr>`;
     }
-    ht+='</table><div class="foot" style="margin-top:4px">Fuel Assignments: System vs Dispatcher (manual deduplicated to most recent per truck).</div>';
+    ht+='</table><div class="foot" style="margin-top:4px">Each de-duplicated fuelling matched to its <b>closest assignment</b> by timestamp (System vs Dispatcher). <b>Unassigned</b> = a fuelling with no matching assignment.</div>';
     if(lubeAssignAuto) lubeAssignAuto.innerHTML=ht;
   }
   if(typeof Chart==='undefined')return;
