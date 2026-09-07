@@ -443,10 +443,24 @@ except Exception:
 # Shovel loading-side snapshots (~5-min intervals): LEFT/RIGHT/DOUBLE SIDE LOADING (+ BELONGS TO TAILING).
 # Per (shift, shovel): count single-sided (LEFT|RIGHT) vs double-sided (DOUBLE); ignore TAILING/blank.
 LOADSIDE=defaultdict(lambda:defaultdict(lambda:[0,0]))   # sid -> excav -> [single, double]
+_LSIDE_LATEST=defaultdict(dict)                          # sid -> excav -> (datetime, label)
+LOAD_SIDE_BY_SHIFT=defaultdict(lambda:defaultdict(lambda:{'latest':'','l':0,'r':0,'d':0,'pct':0}))  # sid -> excav -> loading-side summary
 for _r in load_csv('ShovelLoadingSide.csv'):
-    _ls=(_r.get('Loadside') or '').upper()
-    if 'DOUBLE SIDE' in _ls: LOADSIDE[_r.get('ShiftID')][_r.get('Excav')][1]+=1
-    elif 'LEFT SIDE' in _ls or 'RIGHT SIDE' in _ls: LOADSIDE[_r.get('ShiftID')][_r.get('Excav')][0]+=1
+    _sd=_r.get('ShiftID'); _ex=_r.get('Excav'); _ls=(_r.get('Loadside') or '').upper()
+    if not _sd or not _ex: continue
+    if   'DOUBLE SIDE' in _ls: _side='Double'; LOADSIDE[_sd][_ex][1]+=1
+    elif 'LEFT SIDE'   in _ls: _side='Left';   LOADSIDE[_sd][_ex][0]+=1
+    elif 'RIGHT SIDE'  in _ls: _side='Right';  LOADSIDE[_sd][_ex][0]+=1
+    else: continue                                       # BELONGS TO TAILING / blank -> not a loading side
+    _rec=LOAD_SIDE_BY_SHIFT[_sd][_ex]
+    _rec['d' if _side=='Double' else 'l' if _side=='Left' else 'r']+=1
+    _ts=_dtp(_r.get('Timestamp')); _prev=_LSIDE_LATEST[_sd].get(_ex)
+    if _ts and (_prev is None or _ts>_prev[0]): _LSIDE_LATEST[_sd][_ex]=(_ts,_side)
+for _sd,_exm in _LSIDE_LATEST.items():
+    for _ex,(_ts,_lab) in _exm.items(): LOAD_SIDE_BY_SHIFT[_sd][_ex]['latest']=_lab
+for _exm in LOAD_SIDE_BY_SHIFT.values():
+    for _rec in _exm.values():
+        _tot=_rec['l']+_rec['r']+_rec['d']; _rec['pct']=round(_rec['d']/_tot*100) if _tot else 0
 def _lube_ok(r):   # ignore FUEL&LUBE / FUEL BREAK events under 20 s (counted separately)
     return not (r['Reason'] in ('FUEL&LUBE','FUEL BREAK') and num(r['Duration'])<20)
 def lube_trend(pits):   # cross-shift (all shifts) lube minutes by reason + expected, filtered by pit
@@ -989,7 +1003,7 @@ def build_shift(sm):
             for e in sev:
                 if e['Pit']!=p or e.get('EqmtType')!='Cat 797': continue
                 st=e['ASEStatus']   # Parked is its own state, excluded from PA/UA/OE (not folded into Standby)
-                h=num(e['Duration'])/3600.0
+                h=status_hours(e)
                 if st=='Ready': R+=h
                 elif st=='Delay': De+=h
                 elif st=='Standby': S+=h
@@ -1129,7 +1143,7 @@ def build_shift(sm):
                 for e in sev:
                     if e['Pit']!=p or e.get('EqmtType')!=etype: continue
                     st=e['ASEStatus']   # Parked is its own state, excluded from PA/UA/OE (not folded into Standby)
-                    h=num(e['Duration'])/3600.0
+                    h=status_hours(e)
                     if st=='Ready': R+=h
                     elif st=='Delay': De+=h
                     elif st=='Standby': S+=h
@@ -1171,7 +1185,7 @@ def build_shift(sm):
         for e in sev:
             if e['Eqmt']!=u: continue
             st=e['ASEStatus']   # Parked is its own state, excluded from PA/UA/OE (not folded into Standby)
-            h=num(e['Duration'])/3600.0
+            h=status_hours(e)
             if st=='Ready': R+=h
             elif st=='Delay': De+=h
             elif st=='Standby': S+=h
@@ -2570,7 +2584,7 @@ for sid in byShift:
 
 out={'meta':{'generated':datetime.datetime.now().strftime('%Y-%m-%d %H:%M'),'payloadTarget':PAYLOAD_TARGET},
      'shifts':shiftlist,'defaultShift':(SHIFTS[0]['id'] if SHIFTS else None),'byShift':byShift,'locCoords':loc_coords,
-     'roadCells':road_cells,'roadCell':ROAD_CELL,'baseMap':base_map,'lpByShift':LP_BY_SHIFT}
+     'roadCells':road_cells,'roadCell':ROAD_CELL,'baseMap':base_map,'lpByShift':LP_BY_SHIFT,'loadSideByShift':LOAD_SIDE_BY_SHIFT}
 json.dump(out,open(f'{BASE}/dashboard_data.json','w',encoding='utf-8'),indent=1)
 print("shifts:",[s['name'] for s in SHIFTS])
 for sid in byShift:
@@ -4571,6 +4585,7 @@ function drawLPSan3(loadE,backE){
   // 3-column dump-centric: shovels (loaded) → dump/crusher (centre) → shovels (empty return).
   loadE=(loadE||[]).filter(e=>(e.pathRate||0)>0||(e.loadRate||0)>0); backE=(backE||[]).filter(e=>(e.path||0)>0);
   if(!loadE.length&&!backE.length)return '<div class="foot">No LP legs for this view.</div>';
+  const SIDE=(DATA.loadSideByShift||{})[shift]||{};   // shovel -> latest / total loading side
   const dumps={}; loadE.forEach(e=>dumps[e.dump]=1); backE.forEach(e=>dumps[e.dump]=1);
   // node dig/load rate = a single value the LP repeats on each of the shovel's legs → take it ONCE (max),
   // not summed, so multi-dump shovels aren't double-counted (coverage was ≈ half when summed).
@@ -4632,7 +4647,7 @@ function drawLPSan3(loadE,backE){
     const cvf=(!isN&&digTot[k]>0)?(cN[k]||0)/digTot[k]:null;const cvCol=cvf==null?'#9aa0ab':(cvf>=0.98?'#0e6b5c':cvf>0?'#a5691a':'#9aa0ab');
     const suf=isN?` · <tspan fill="${NOTLP}" font-weight="700">not in LP${notLPst[k]?' · '+notLPst[k]:''}</tspan>`:(prTxt?` · <tspan fill="${prCol}" font-weight="700">${prTxt}</tspan>`:'');
     nd+=`<text x="${p.x-7}" y="${cy-4}" text-anchor="end" font-size="14.5" font-weight="700" fill="var(--ink)" stroke="#fff" stroke-width="3" paint-order="stroke"><tspan fill="${mc}">■ </tspan>${k}${cvf!=null?' <tspan fill="'+cvCol+'">'+Math.round(cvf*100)+'%</tspan>':''}</text>`
-      +`<text x="${p.x-7}" y="${cy+13}" text-anchor="end" font-size="12.1" fill="var(--muted)" stroke="#fff" stroke-width="2.6" paint-order="stroke">${fmt(digTot[k])} t/h${suf}</text>`;});
+      +`<text x="${p.x-7}" y="${cy+13}" text-anchor="end" font-size="12.1" fill="var(--muted)" stroke="#fff" stroke-width="2.6" paint-order="stroke">${fmt(digTot[k])} t/h${suf}${SIDE[k]&&SIDE[k].latest?' · <tspan fill="#7a4fd0" font-weight="700">'+SIDE[k].latest+' side</tspan>':''}</text>`;});
   cdumps.forEach(k=>{const p=pC[k],a=dg[k],cy=p.y+p.h/2;
     nd+=`<rect x="${p.x}" y="${p.y}" width="${nodeW}" height="${p.h}" rx="2" fill="#5b6675"/>`;
     // weighted-average grade — directly on top of the crusher name (one line above it)
@@ -4668,7 +4683,7 @@ function renderPulse(){
     const bk=((lpl.backhaul)||[]).filter(r=>pf(r.pit));
     const btxt=(lpl.backTime&&lpl.backTime!==lpl.lpTime)?` · empty-return legs from last complete solve ${lpl.backTime}`:'';
     const misslg=missE.length?`<span class="badge"><b style="color:#8a4fd0">▨</b> not in optimizer — actual tonnes (avg t/h) for shovels the LP didn't cover</span>`:'';
-    const leg=`<div class="badges" style="margin-top:6px"><span class="badge"><b style="color:${CORE}">■</b> ore</span><span class="badge"><b style="color:${CWASTE}">■</b> waste / other</span>${misslg}<span class="badge"><b style="color:#9aa6b5">■</b> empty return (path only)</span><span class="badge">▨ hatched = uncovered dig capacity</span><span class="badge"><b>left</b> shovel: ID + coverage % · load rate (t/h) + LP priority (P#; 255+ = Disabled) · <b>centre</b> dump: name + t/h + blended grade (Bit/Fines/D50) · <b>right</b> shovel: empty-return path t/h${btxt}</span></div>`;
+    const leg=`<div class="badges" style="margin-top:6px"><span class="badge"><b style="color:${CORE}">■</b> ore</span><span class="badge"><b style="color:${CWASTE}">■</b> waste / other</span>${misslg}<span class="badge"><b style="color:#9aa6b5">■</b> empty return (path only)</span><span class="badge">▨ hatched = uncovered dig capacity</span><span class="badge"><b style="color:#7a4fd0">latest side</b> = shovel's most recent loading side (Left/Right/Double)</span><span class="badge"><b>left</b> shovel: ID + coverage % · load rate (t/h) + LP priority (P#; 255+ = Disabled) · <b>centre</b> dump: name + t/h + blended grade (Bit/Fines/D50) · <b>right</b> shovel: empty-return path t/h${btxt}</span></div>`;
     cur.innerHTML=drawLPSan3(loadE,bk)+((loadE.length||bk.length)?leg:'');
   }
   // ---- Shift LP (hourly averages) — one row per shovel, ordered by shovel ID ----
@@ -4703,6 +4718,7 @@ function drawTruckFlow(d,mode,simple){
   const flows=(DUMPC?(d.prevFlows||[]):d.fullFlows).filter(f=>f.tons>0).slice();
   const pflows=(DUMPC?d.fullFlows:(d.prevFlows||[])).filter(f=>f.tons>0).slice();
   if(!flows.length)return '<div class="foot">No flow data.</div>';
+  const SIDE=(DATA.loadSideByShift||{})[shift]||{};   // shovel -> total loading-side share
   const tpOf={};d.loadNodes.forEach(n=>tpOf[n.id]=n.tpnoh||0);
   const dtOf={};d.dumpNodes.forEach(n=>dtOf[n.id]=n.tons||0);
   // Build node sizes from fullFlows (shovel→dump, right side)
@@ -4797,6 +4813,8 @@ function drawTruckFlow(d,mode,simple){
     }else{xout=p.x;nd+=`<rect x="${p.x}" y="${p.y}" width="${nodeW}" height="${p.h}" rx="2" fill="#8fa0b8"/>`;}
     const lbl=shortId(k)+'  ·  '+Math.round(srcP[k]).toLocaleString()+' t';
     nd+=`<text x="${(xout-6).toFixed(1)}" y="${(cy+3.5).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--ink)">${lbl}</text>`;
+    const _sd=DUMPC?SIDE[k]:null;   // loading shovel (dump mode) -> total double-side %
+    if(_sd)nd+=`<text x="${(xout-6).toFixed(1)}" y="${(cy+15).toFixed(1)}" text-anchor="end" font-size="8.5" font-weight="700" fill="#7a4fd0">${_sd.pct}% double-side</text>`;
   });
   // Col B: shovel nodes (middle) — label to the left (same as existing drawSan style)
   shovels.forEach(k=>{const p=posB[k];
@@ -5297,7 +5315,7 @@ function renderMatPlace(){   // Material Placement Sankey (its own tab) — SVG,
   document.getElementById('hcsub2').textContent='('+view+')';
   const legTxt=anchor=>`<span class="badge"><b style="color:${CORE}">■</b> ore</span><span class="badge"><b style="color:${CWASTE}">■</b> waste</span><span class="badge">▨ hatched = locked (un-optimized) loads · % under nodes</span><span class="badge">ribbon width ∝ tonnage · <b>each ribbon's length is its own haul distance to scale</b> (${anchor} = 0 km — see the ruler). Each node stays a single bar whose <b>width spans that node's range of path distances</b>.</span>`;
   document.getElementById('hcSimple').innerHTML=drawTruckFlow(V().haulCycles,'dump',true);
-  document.getElementById('hclegSimple').innerHTML=`<span class="badge"><b style="color:${CORE}">■</b> ore</span><span class="badge"><b style="color:${CWASTE}">■</b> waste</span><span class="badge">▨ hatched = locked (un-optimized) loads · % under nodes</span><span class="badge">same dump-centric layout — full-haul tonnage (shovel→dump) + empty-haul tonnage (dump→next shovel) + % locked all retained · ribbon width ∝ tonnage · <b>haul distance NOT encoded</b> (even columns).</span>`;
+  document.getElementById('hclegSimple').innerHTML=`<span class="badge"><b style="color:${CORE}">■</b> ore</span><span class="badge"><b style="color:${CWASTE}">■</b> waste</span><span class="badge">▨ hatched = locked (un-optimized) loads · % under nodes</span><span class="badge">same dump-centric layout — full-haul tonnage (shovel→dump) + empty-haul tonnage (dump→next shovel) + % locked all retained · ribbon width ∝ tonnage · <b>haul distance NOT encoded</b> (even columns).</span><span class="badge"><b style="color:#7a4fd0">NN% double-side</b> = shift-total double-side loading share per shovel (ShovelLoadingSide)</span>`;
   // ---- cycle map (spatial) ----
   renderCycleMap();
   const roadBadge=(DATA.roadCells&&DATA.roadCells.length)?`<span class="badge"><b style="color:#8a8f98">▪</b> haul roads (truck-trace density)</span>`:'';
