@@ -887,7 +887,7 @@ def build_shift(sm):
                   'avg':round(v[1]/v[0]) if v[0] else 0,'over':round(v[3]/v[0]*100) if v[0] else 0}
                  for k,v in sorted(rr.items(),key=lambda x:-x[1][1])]
         FEDGES=[0,8,16,24,32,40,60,80,100]      # custom (non-uniform) fuel-level bin edges
-        hist=[0]*(len(FEDGES)-1); histMan=[0]*(len(FEDGES)-1); faulty=0; zero=0; corrected=0; suspect=0
+        hist=[0]*(len(FEDGES)-1); histMan=[0]*(len(FEDGES)-1); histBadHigh=[0]*(len(FEDGES)-1); faulty=0; zero=0; corrected=0; suspect=0
         fsm=defaultdict(lambda:[0,0.0,''])   # eqmt -> [faulty-read count, sample value, type]
         def _implied(r):   # litres/tank-derived level (only when the fuel workbooks are present), else None
             c=FUEL_LITRES.get((sid,r.get('Eqmt'))); tsz=FUEL_TANK.get(r.get('Eqmt'))
@@ -895,10 +895,10 @@ def build_shift(sm):
             d=_dtp(r.get('TimeStamp')); sec=(((d.hour-base)%24)*3600+d.minute*60+d.second) if d else 0
             return 100-min(c,key=lambda x:abs(x[0]-sec))[1]/tsz*100
         for r in Lv:
-            f=num(r['FuelLevel']); imp=_implied(r)
+            f=num(r['FuelLevel']); imp=_implied(r); badSensor=False
             if imp is not None and 0<=imp<=100:
-                if f>100: f=imp; corrected+=1                 # faulty sensor -> use litres-derived level
-                elif abs(imp-f)>10: f=imp; suspect+=1         # believable but wrong -> correct & flag
+                if f>100: f=imp; corrected+=1; badSensor=True   # faulty sensor -> use litres-derived level
+                elif abs(imp-f)>10: f=imp; suspect+=1; badSensor=True  # believable but wrong -> correct & flag
             if f>100:
                 faulty+=1; e=fsm[r['Eqmt']]; e[0]+=1; e[1]=f; e[2]=r['Eqmttype']
             elif f<=0: zero+=1
@@ -907,6 +907,7 @@ def build_shift(sm):
                 for j in range(len(FEDGES)-1):
                     if f<FEDGES[j+1]: bi=j; break
                 hist[bi]+=1
+                if badSensor and f>40: histBadHigh[bi]+=1   # bad sensor read, truly refuelled with >40% still in tank
                 if _assign_manual(r['Eqmt'],_dtp(r['TimeStamp'])):   # manual-assigned refuel
                     histMan[bi]+=1
         faultySensor=[{'eqmt':k,'type':v[2],'reads':v[0],'value':round(v[1])}
@@ -966,7 +967,7 @@ def build_shift(sm):
         truckAssign={'system':ta_sys_n,'manual':ta_man_n,'total':ta_tot,
                      'sysPct':round(ta_sys_n/ta_tot*100) if ta_tot else 0,
                      'manPct':round(ta_man_n/ta_tot*100) if ta_tot else 0}
-        return {'reasons':reasons,'fuelHist':hist,'fuelHistMan':histMan,'fuelEdges':FEDGES,'faulty':faulty,'zero':zero,'shortCount':short,
+        return {'reasons':reasons,'fuelHist':hist,'fuelHistMan':histMan,'fuelHistBadHigh':histBadHigh,'fuelEdges':FEDGES,'faulty':faulty,'zero':zero,'shortCount':short,
                 'leaderboard':leaderboard,'byClass':byClass,'n':len(Lv),'dupDropped':dupDropped,'hourly':hourly,
                 'faultySensor':faultySensor,'fuelAssign':fuelAssign,'truckAssign':truckAssign,
                 'corrected':corrected,'suspect':suspect}
@@ -3274,7 +3275,7 @@ body.sb-auto .pagenav{display:flex}
     <section class="page" id="pg-lube" hidden>
       <div class="charts">
         <div class="chartcard" style="display:flex;flex-direction:column;gap:14px">
-          <div><h3>Fuel Level at Refuel <span class="sub" id="lusub"></span></h3><div class="chartwrap" style="height:312px"><canvas id="chLubeFuel"></canvas></div></div>
+          <div><h3>Fuel Level at Refuel <span class="sub" id="lusub"></span></h3><div class="chartwrap" style="height:312px"><canvas id="chLubeFuel"></canvas></div><div class="foot" id="fuelBadHighNote" style="margin-top:4px"></div></div>
           <div><h3>Assignment Automation</h3><div id="lubeAssignAuto"></div></div>
           <div><h3>Faulty Fuel-Level Sensors <span class="sub" id="lfssub"></span></h3><div id="lubeFaulty"></div></div>
         </div>
@@ -3776,6 +3777,8 @@ function renderLube(){
   const fe=lu.fuelEdges||[0,10,20,30,40,50,60,70,80,90,100];
   const fhMan=lu.fuelHistMan||new Array(fh.length).fill(0);
   const fhSys=fh.map((v,i)=>Math.max(0,v-(fhMan[i]||0)));
+  const fhBadHigh=lu.fuelHistBadHigh||new Array(fh.length).fill(0);
+  const fhBadTot=fhBadHigh.reduce((a,b)=>a+b,0);
   const binCol=i=>fe[i]<8?'#e23b32':(fe[i]<40?'#1f9e8b':'#9aa0ab');
   const binLine=i=>fe[i]<8?'#7d1611':(fe[i]<40?'#0b544a':'#565b66');
   const fuelPct={id:'fuelPct',afterDatasetsDraw(ch){
@@ -3801,10 +3804,25 @@ function renderLube(){
     ctx.fillText('avg',ca.right+2,yp+1);
     ctx.restore();
   }};
+  const badHighMark={id:'badHighMark',afterDatasetsDraw(ch){
+    const ctx=ch.ctx,y=ch.scales.y,m=ch.getDatasetMeta(0); if(!m) return;
+    ctx.save(); ctx.textAlign='center'; ctx.textBaseline='middle';
+    fhBadHigh.forEach((v,i)=>{const bar=m.data[i]; if(!bar||v<=0) return;
+      const top=y.getPixelForValue(fh[i]), yb=y.getPixelForValue(0), w=bar.width||18, cx=bar.x;
+      ctx.strokeStyle='#e23b32'; ctx.lineWidth=1.8; ctx.setLineDash([]); ctx.strokeRect(cx-w/2,top,w,yb-top);
+      const cy=top-13;
+      ctx.fillStyle='#e23b32'; ctx.beginPath();
+      ctx.moveTo(cx,cy-5); ctx.lineTo(cx+5.5,cy); ctx.lineTo(cx,cy+5); ctx.lineTo(cx-5.5,cy); ctx.closePath(); ctx.fill();
+      ctx.fillStyle='#fff'; ctx.font='700 8px system-ui,sans-serif'; ctx.fillText(v+'',cx,cy+0.5);
+    });
+    ctx.restore();
+  }};
   mk('chLubeFuel',{type:'bar',data:{labels:fh.map((_,i)=>fe[i]+'-'+fe[i+1]),datasets:[
     {label:'system-assigned',data:fhSys,backgroundColor:fh.map((_,i)=>binCol(i)),stack:'f'},
     {label:'manual-assigned ▨',data:fhMan,backgroundColor:fh.map((_,i)=>mkHatch(binCol(i),binLine(i))),stack:'f'}
-  ]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:12}},plugins:{legend:{display:true,labels:{boxWidth:11,font:{size:10}}},tooltip:{callbacks:{title:c=>c[0].label+'% fuel',label:c=>c.dataset.label+': '+c.parsed.y+' events',footer:c=>{const i=c[0].dataIndex;return fh[i]+' total ('+Math.round(fh[i]/fhTot*100)+'% of shift)'+(fhMan[i]?' · '+fhMan[i]+' manually assigned':'');}}}},scales:{x:{stacked:true,ticks:{font:{size:9}}},y:{stacked:true,title:{display:true,text:'events'},ticks:{font:{size:10}}}}},plugins:[fuelPct,fuelAvgLine]});
+  ]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:12}},plugins:{legend:{display:true,labels:{boxWidth:11,font:{size:10}}},tooltip:{callbacks:{title:c=>c[0].label+'% fuel',label:c=>c.dataset.label+': '+c.parsed.y+' events',footer:c=>{const i=c[0].dataIndex;return fh[i]+' total ('+Math.round(fh[i]/fhTot*100)+'% of shift)'+(fhMan[i]?' · '+fhMan[i]+' manually assigned':'')+(fhBadHigh[i]?' · ◆ '+fhBadHigh[i]+' bad-sensor refuel(s) >40% full':'');}}}},scales:{x:{stacked:true,ticks:{font:{size:9}}},y:{stacked:true,title:{display:true,text:'events'},ticks:{font:{size:10}}}}},plugins:[fuelPct,fuelAvgLine,badHighMark]});
+  const _fbhNote=document.getElementById('fuelBadHighNote');
+  if(_fbhNote) _fbhNote.innerHTML=fhBadTot>0?`<span style="color:#e23b32">◆</span> <b>${fhBadTot}</b> refuel${fhBadTot>1?'s':''} flagged — faulty/suspect sensor read <b>and</b> true level (litres ÷ tank) still <b>&gt;40% full</b>; wasteful early refuels only visible after the litres correction.`:`No bad-sensor refuels above 40% tank this shift/view.`;
 }
 const AVMET=[['PA','PA','bPA'],['UA','UA','bUA'],['OE','OE','bOE'],['POE','POE',null]];
 function sparkCycle(hourly){   // avg truck cycle time (mm:ss) per hour for a shovel→dump lane, with grid + point labels
